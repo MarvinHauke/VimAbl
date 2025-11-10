@@ -7,7 +7,27 @@ Ableton-Live-LSP/
 ├── .claude/                    # Claude configuration
 ├── .git/                       # Git repository
 ├── .serena/                    # Serena memory files
+├── Example_Project/            # Test project files
+│   ├── example.als            # Ableton project file
+│   └── example.xml            # Decompressed XML for testing
 ├── src/                        # Source code
+│   ├── main.py                # CLI entrypoint (legacy/server/info modes)
+│   ├── parser/                # XML parsing and data extraction
+│   │   ├── __init__.py
+│   │   ├── xml_loader.py      # Decompress .als, load XML tree
+│   │   ├── file_refs.py       # Extract FileRef + hashes
+│   │   ├── tracks.py          # Extract track information
+│   │   ├── ast_builder.py     # Build raw dict AST
+│   │   └── utils.py           # Shared helpers
+│   ├── ast/                   # AST node classes and manipulation
+│   │   ├── __init__.py
+│   │   ├── node.py            # Node class definitions
+│   │   ├── visitor.py         # Traversals, diffing, serialization
+│   │   └── hashing.py         # Incremental SHA-256 per node
+│   ├── server/                # LSP-like server interface
+│   │   ├── __init__.py
+│   │   ├── api.py             # ASTServer with query/diff APIs
+│   │   └── watcher.py         # File monitoring (optional)
 │   ├── hammerspoon/           # Lua automation scripts
 │   │   ├── ableton.lua        # Entry point for Hammerspoon integration
 │   │   ├── app_watcher.lua    # Detects Live open/close events
@@ -22,15 +42,44 @@ Ableton-Live-LSP/
 │   │       └── views.lua      # View toggles (ctrl + -)
 │   └── remote_script/         # Python Remote Script (runs inside Live)
 │       ├── __init__.py        # Required for Python package
-│       └── LiveState.py       # Main controller with socket server
+│       ├── LiveState.py       # Main controller with socket server
+│       ├── commands.py        # Command implementations
+│       ├── observers.py       # Live API observers
+│       └── server.py          # Socket server
+├── requirements.txt           # Python dependencies (watchdog)
 ├── .gitignore                 # Git ignore patterns
 ├── .mcp.json                  # MCP configuration
 ├── LICENSE                    # MIT License
 ├── Log.txt                    # Project log file
+├── REFACTORING_SUMMARY.md     # AST refactoring documentation
 └── README.md                  # Project documentation
 ```
 
 ## Key Files and Their Roles
+
+### AST Parser & Server (new - 2025-11-10)
+
+#### `src/main.py`
+- **CLI entrypoint** with three modes:
+  - `--mode=legacy` - Raw dict output (backward compatible)
+  - `--mode=server` - Structured AST with node objects
+  - `--mode=info` - Project statistics summary
+
+#### `src/parser/` - XML Parsing Module
+- `xml_loader.py` - Decompress .als files, load XML tree
+- `file_refs.py` - Extract file references and hashes
+- `tracks.py` - Extract track information
+- `ast_builder.py` - Build raw dict AST from XML
+- `utils.py` - Shared helper functions
+
+#### `src/ast/` - AST Manipulation Module
+- `node.py` - Node class definitions (ProjectNode, TrackNode, DeviceNode, etc.)
+- `visitor.py` - Visitor patterns (serialization, diffing, search, pretty-print)
+- `hashing.py` - Incremental SHA-256 hashing for change detection
+
+#### `src/server/` - LSP-like Server Interface
+- `api.py` - ASTServer with query, diff, and project info APIs
+- `watcher.py` - File monitoring with automatic reloading (optional, requires watchdog)
 
 ### Python Remote Script (runs inside Ableton Live)
 
@@ -105,6 +154,13 @@ Key responsibilities:
 9. **User sees result** → Action executed in Live
 
 ## Extension Points
+
+### Working with AST Parser
+
+1. **Add new node types**: Extend `src/ast/node.py` with new node classes
+2. **Add new visitors**: Implement `ASTVisitor` subclass in `src/ast/visitor.py`
+3. **Expand parser**: Add extraction functions in `src/parser/` modules
+4. **Add server operations**: Extend `ASTServer` in `src/server/api.py`
 
 ### Adding New Commands
 

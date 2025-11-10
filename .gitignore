@@ -28,6 +28,11 @@ htmlcov/
 .dmypy.json
 dmypy.json
 
+# Ableton Projecte
+Example_Project/*
+
+
+
 # Virtual environments
 venv/
 env/
