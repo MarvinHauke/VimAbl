@@ -10,40 +10,20 @@ local ggTap = nil
 local monitorTimer = nil
 
 function M.setup()
-	-- gg - Jump to start/first scene or track
+	-- gg - Jump to start/first scene or track (auto-detects view)
 	ggTap = utils.createSequence({ "g", "g" }, "Live", function()
-		print("Navigation: gg triggered")
-		local view = liveState.getCurrentView()
-		print("Navigation: Current view = " .. tostring(view))
-
-		if view == "arrangement" then
-			print("Navigation: Selecting first track")
-			liveState.selectFirstTrack()
-		else
-			-- Session view: Select first scene
-			print("Navigation: Selecting first scene")
-			liveState.selectFirstScene()
-		end
+		print("Navigation: gg triggered - jumping to first")
+		liveState.jumpToFirst()
 	end)
 
-	-- G - Jump to end/last scene
+	-- G - Jump to end/last scene or track (auto-detects view)
 	gTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(event)
 		local char = event:getCharacters()
 		local frontApp = hs.application.frontmostApplication()
 
 		if frontApp and frontApp:name() == "Live" and char == "G" then
-			print("Navigation: G triggered")
-			local view = liveState.getCurrentView()
-			print("Navigation: Current view = " .. tostring(view))
-
-			if view == "arrangement" then
-				print("Navigation: Selecting last track")
-				liveState.selectLastTrack()
-			else
-				-- Session view: Select last scene
-				print("Navigation: Selecting last scene")
-				liveState.selectLastScene()
-			end
+			print("Navigation: G triggered - jumping to last")
+			liveState.jumpToLast()
 			return true
 		end
 

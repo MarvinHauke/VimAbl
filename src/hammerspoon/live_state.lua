@@ -79,26 +79,6 @@ local function sendCommand(command)
 	return false
 end
 
--- Select first scene (Session view)
-function M.selectFirstScene()
-	return sendCommand("SELECT_FIRST_SCENE")
-end
-
--- Select last scene (Session view)
-function M.selectLastScene()
-	return sendCommand("SELECT_LAST_SCENE")
-end
-
--- Select first track (Arrangement view)
-function M.selectFirstTrack()
-	return sendCommand("SELECT_FIRST_TRACK")
-end
-
--- Select last track (Arrangement view)
-function M.selectLastTrack()
-	return sendCommand("SELECT_LAST_TRACK")
-end
-
 -- Scroll to top (Arrangement view)
 function M.scrollToTop()
 	return sendCommand("SCROLL_TO_TOP")
@@ -107,6 +87,16 @@ end
 -- Scroll to bottom (Arrangement view)
 function M.scrollToBottom()
 	return sendCommand("SCROLL_TO_BOTTOM")
+end
+
+-- Jump to first (auto-detects view: first track in arrangement, first scene in session)
+function M.jumpToFirst()
+	return sendCommand("JUMP_TO_FIRST")
+end
+
+-- Jump to last (auto-detects view: last track in arrangement, last scene in session)
+function M.jumpToLast()
+	return sendCommand("JUMP_TO_LAST")
 end
 
 return M
