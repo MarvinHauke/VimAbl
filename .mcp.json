@@ -18,7 +18,7 @@
         "--context",
         "ide-assistant",
         "--project",
-        "/Users/pforsten/Development/svelte/Irregular"
+        "/Users/pforsten/Development/python/Ableton-Live-LSP"
       ],
       "env": {}
     }
