@@ -60,11 +60,34 @@ Your AST architecture is solid with:
 
 ---
 
-## Phase 1: WebSocket Server Foundation
+## Phase 1: WebSocket Server Foundation ✅ COMPLETE
 
 **Priority: HIGH**
 **Dependencies: Existing AST parser (Phase 1a-1b from previous TODO)**
 **Goal: Create WebSocket server that can stream AST updates**
+
+### Implementation Status
+
+The WebSocket server and Hammerspoon integration are complete! Key components:
+
+**Hammerspoon Integration:**
+- `src/hammerspoon/websocket_manager.lua` - Manages WebSocket server process lifecycle
+- `src/hammerspoon/keys/websocket.lua` - Keybindings for manual control
+- `src/hammerspoon/app_watcher.lua` - Auto-starts server when Ableton launches
+- `src/remote_script/commands.py` - Added `GET_PROJECT_PATH` command
+
+**How It Works:**
+1. Ableton Live launches → Hammerspoon detects it
+2. Waits 5 seconds for Live to fully load
+3. Queries Remote Script for current project path
+4. Starts WebSocket server using `uv run python -m src.main`
+5. Server streams AST updates on port 8765
+6. When Ableton quits → Server stops automatically
+
+**Manual Controls:**
+- `Cmd+Shift+W` - Toggle WebSocket server
+- `Cmd+Shift+R` - Restart server
+- `Cmd+Shift+I` - Show server status
 
 ### Phase 1a: WebSocket Server Setup
 
@@ -503,6 +526,70 @@ Your AST architecture is solid with:
 **Priority: HIGH**
 **Dependencies: All previous phases**
 **Goal: Ensure reliability and usability**
+
+### Testing the WebSocket TreeViewer
+
+#### Method 1: Python Test Script (Automated)
+
+```bash
+# From project root
+uv run python test_websocket.py
+```
+
+**Expected Output:**
+```
+Connecting to ws://localhost:8765...
+Connected!
+
+Received message type: FULL_AST
+AST root type: project
+Test successful!
+```
+
+#### Method 2: Browser Test (Visual)
+
+1. Open http://localhost:5173 in your browser
+2. Check connection status at the top: `🟢 Connected`
+3. Open Browser Console (`Cmd+Option+J` or `F12`)
+4. Look for WebSocket logs:
+   ```
+   [WebSocket] Connecting to ws://localhost:8765...
+   [WebSocket] Connected
+   [WebSocket] Received message: FULL_AST
+   ```
+5. Verify AST Display shows project structure
+
+#### Troubleshooting
+
+**Connection Refused Error:**
+```bash
+# Check if WebSocket server is running
+lsof -i :8765
+
+# If not, start it:
+uv run python -m src.main Example_Project/example.als --mode=websocket
+```
+
+**Port Already in Use:**
+```bash
+# Kill process on port 8765
+lsof -ti :8765 | xargs kill -9
+
+# Restart server
+uv run python -m src.main Example_Project/example.als --mode=websocket
+```
+
+**WebSocket Server Doesn't Auto-Start (Hammerspoon):**
+1. Is your project saved? (Has a `.als` file path)
+2. Open Hammerspoon console - look for error messages
+3. Check if Remote Script is running: `echo "GET_STATE" | nc -w 1 127.0.0.1 9001`
+4. Try manually: `Cmd+Shift+W` to toggle server
+
+**No AST Data Displayed:**
+1. Is WebSocket server running? `lsof -i :8765`
+2. Is connection status "Connected"?
+3. Check browser console for errors
+4. Try refreshing the page
 
 ### Phase 7a: Unit Tests
 

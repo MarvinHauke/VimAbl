@@ -30,6 +30,7 @@ class CommandHandlers:
         return {
             "GET_VIEW": self._handle_get_view,           # Direct - no self.song() access
             "GET_STATE": self._handle_get_state,         # Threaded - needs self.song().is_playing
+            "GET_PROJECT_PATH": self._handle_get_project_path,  # Direct - application property
             "SCROLL_TO_TOP": self._handle_scroll_to_top,
             "SCROLL_TO_BOTTOM": self._handle_scroll_to_bottom,
             "JUMP_TO_FIRST": self._handle_jump_to_first,  # Smart command - auto-detects view
@@ -38,7 +39,7 @@ class CommandHandlers:
 
     def get_direct_commands(self):
         """Commands that can execute immediately without thread switching"""
-        return {"GET_VIEW"}
+        return {"GET_VIEW", "GET_PROJECT_PATH"}
 
     def _handle_get_view(self, params=None):
         """Handle GET_VIEW command (fast path - no thread switching)"""
@@ -54,6 +55,29 @@ class CommandHandlers:
         return {
             "view": current
         }
+
+    def _handle_get_project_path(self, params=None):
+        """Handle GET_PROJECT_PATH command"""
+        try:
+            # Get the current document/project
+            document = self.application.get_document()
+            if document and hasattr(document, 'path'):
+                path = str(document.path) if document.path else None
+                self.log_message(f"Project path: {path}")
+                return {
+                    "project_path": path
+                }
+            else:
+                self.log_message("No document or path available")
+                return {
+                    "project_path": None
+                }
+        except Exception as e:
+            self.log_message(f"Failed to get project path: {str(e)}")
+            return {
+                "project_path": None,
+                "error": str(e)
+            }
 
     def _handle_get_state(self, params=None):
         """Handle GET_STATE command"""

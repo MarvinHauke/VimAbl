@@ -1,5 +1,7 @@
 -- Application watcher for Ableton Live
 local statusCheck = require("status_check")
+local liveState = require("live_state")
+local wsManager = require("websocket_manager")
 
 local M = {}
 
@@ -25,8 +27,23 @@ local function applicationWatcherCallback(appName, eventType, appObject)
 					end
 				end)
 			end
+
+			-- Wait 5 seconds for Live to fully load, then start WebSocket server
+			hs.timer.doAfter(5, function()
+				print("Ableton VimMode: Attempting to start WebSocket server...")
+				local projectPath = liveState.getProjectPath()
+				if projectPath then
+					print("Ableton VimMode: Found project: " .. projectPath)
+					wsManager.start(projectPath)
+				else
+					print("Ableton VimMode: No project loaded in Ableton (this is normal for new projects)")
+					print("Ableton VimMode: Save your project first, then use Cmd+Shift+W to start WebSocket server")
+				end
+			end)
+
 		elseif eventType == hs.application.watcher.terminated then
 			print("Ableton VimMode: Ableton closed")
+			wsManager.stop()
 		end
 	end
 end

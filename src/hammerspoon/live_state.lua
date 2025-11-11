@@ -45,6 +45,27 @@ function M.getState()
 	return nil
 end
 
+-- Get current project path from Ableton
+function M.getProjectPath()
+	local handle = io.popen('echo "GET_PROJECT_PATH" | nc -w 1 ' .. M.HOST .. " " .. M.PORT .. " 2>/dev/null")
+	if not handle then
+		return nil
+	end
+
+	local result = handle:read("*a")
+	handle:close()
+
+	if result and result ~= "" then
+		local json = require("hs.json")
+		local decoded = json.decode(result)
+		if decoded and decoded.project_path then
+			return decoded.project_path
+		end
+	end
+
+	return nil
+end
+
 -- Send command to Remote Script
 local function sendCommand(command)
 	print("LiveState: Sending command: " .. command)

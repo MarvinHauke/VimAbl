@@ -7,6 +7,7 @@ local M = {}
 local navigation = require("keys.navigation")
 local editing = require("keys.editing")
 local views = require("keys.views")
+local websocket = require("keys.websocket")
 local statusCheck = require("status_check")
 local appWatcher = require("app_watcher")
 
@@ -14,6 +15,7 @@ local appWatcher = require("app_watcher")
 navigation.setup()
 editing.setup()
 views.setup()
+websocket.setup()
 
 -- Setup application watcher
 appWatcher.setup()

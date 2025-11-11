@@ -36,9 +36,59 @@ Vim-like keybindings and LSP-style server functionality for Ableton Live. Contro
 
 - **Ableton Live** (any version with Remote Script support)
 - **Hammerspoon** - macOS automation tool ([Download](https://www.hammerspoon.org/))
-- **Python** (bundled with Live)
+- **Python 3.11+** - For external tools (AST parser, WebSocket server)
+- **uv** - Python package manager ([Install](https://github.com/astral-sh/uv))
 
-### 1. Install Remote Script
+### 1. Install uv
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Or with Homebrew:
+
+```bash
+brew install uv
+```
+
+### 2. Install Project Dependencies
+
+```bash
+# Sync all dependencies (creates .venv automatically)
+uv sync
+
+# Or with dev dependencies
+uv sync --all-extras
+```
+
+### 3. Activate Virtual Environment
+
+**Option 1: Use direnv (recommended)**
+
+If you have [direnv](https://direnv.net/) installed:
+
+```bash
+# Allow direnv to load .envrc
+direnv allow
+
+# Now it auto-activates when you cd into the directory!
+cd /path/to/VimAbl  # Environment auto-loads
+```
+
+**Option 2: Use uv run** (recommended if no direnv)
+
+```bash
+uv run python -m src.main --help
+```
+
+**Option 3: Activate manually**
+
+```bash
+source .venv/bin/activate
+python -m src.main --help
+```
+
+### 4. Install Remote Script
 
 Create a symlink to the remote script in Ableton's Remote Scripts folder (recommended for development):
 
@@ -55,7 +105,7 @@ mklink /D "%USERPROFILE%\Documents\Ableton\User Library\Remote Scripts\LiveState
 cp -r src/remote_script ~/Music/Ableton/User\ Library/Remote\ Scripts/LiveState
 ```
 
-### 2. Enable Remote Script in Ableton
+### 5. Enable Remote Script in Ableton
 
 1. Open Ableton Live **Preferences**
 2. Go to **Link/Tempo/MIDI** tab
@@ -63,7 +113,7 @@ cp -r src/remote_script ~/Music/Ableton/User\ Library/Remote\ Scripts/LiveState
 4. Set Input/Output to **None**
 5. **Restart Ableton Live**
 
-### 3. Install Hammerspoon Scripts
+### 6. Install Hammerspoon Scripts
 
 Create symlinks for development (recommended):
 
@@ -90,7 +140,7 @@ mkdir -p ~/.hammerspoon/keys
 cp src/hammerspoon/keys/*.lua ~/.hammerspoon/keys/
 ```
 
-### 4. Configure Hammerspoon
+### 7. Configure Hammerspoon
 
 Add to your `~/.hammerspoon/init.lua`:
 
@@ -101,7 +151,7 @@ require("ableton")
 
 Then **reload Hammerspoon config** (Menu bar icon → Reload Config)
 
-### 5. Verify Installation
+### 8. Verify Installation
 
 **Check Remote Script is loaded:**
 ```bash
@@ -201,6 +251,51 @@ echo "GET_STATE" | nc 127.0.0.1 9001
 ### Hammerspoon not detecting Live opening/closing
 - **Fixed!** App watcher now stored at module level to prevent garbage collection
 - Check console for: `"Ableton VimMode: Application watcher started"`
+
+## WebSocket TreeViewer
+
+VimAbl includes a real-time web-based AST visualizer for Ableton Live projects.
+
+### Features
+- 🌲 **Interactive Tree View** - Explore project structure (tracks, devices, clips, samples)
+- ⚡ **Real-Time Updates** - See changes as you work in Live
+- 🔍 **SHA Tracking** - Each file reference is hashed for diff detection
+- 🧰 **WebSocket Streaming** - Efficient JSON-based communication
+
+### Quick Start
+
+**Automatic Mode (with Hammerspoon):**
+1. Make sure your Ableton project is saved
+2. Launch Ableton Live
+3. Wait ~5 seconds - WebSocket server starts automatically
+4. Open http://localhost:5173 in your browser
+
+**Manual Mode:**
+```bash
+# Terminal 1: Start WebSocket server
+uv run python -m src.main Example_Project/example.als --mode=websocket
+
+# Terminal 2: Start Svelte dev server
+cd src/web/frontend
+npm run dev
+
+# Open http://localhost:5173 in browser
+```
+
+### Manual Controls (with Hammerspoon)
+
+| Keybinding | Action |
+|------------|--------|
+| `Cmd+Shift+W` | Toggle WebSocket server on/off |
+| `Cmd+Shift+R` | Restart WebSocket server |
+| `Cmd+Shift+I` | Show server status |
+
+### Architecture
+
+The TreeViewer consists of:
+- **WebSocket Server** (Python, port 8765) - Parses .als files and streams AST updates
+- **Svelte Frontend** (SvelteKit + Tailwind, port 5173) - Renders interactive tree visualization
+- **Hammerspoon Integration** - Auto-starts server when Ableton launches
 
 ## Development
 
