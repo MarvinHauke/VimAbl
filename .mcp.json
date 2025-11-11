@@ -1,5 +1,15 @@
 {
   "mcpServers": {
+    "svelte": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@sveltejs/mcp"],
+      "env": {}
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
     "sequential-thinking": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
