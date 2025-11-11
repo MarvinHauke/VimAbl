@@ -9,6 +9,10 @@ Ableton Live LSP provides Vim-like keybindings and LSP-style server functionalit
 - **Thread-safe Remote Script**: Exposes Live's state via local socket server (port 9001)
 - **Modular architecture**: Easy to extend with new commands
 - **Auto-recovery**: Monitors and restarts eventtaps automatically
+- **Smart project watcher**: Auto-detects .als file saves and starts WebSocket server
+- **XML extraction**: Decompresses .als files to XML for AST analysis
+- **Web tree viewer**: Real-time WebSocket server (port 8765) for project visualization
+- **Intelligent connection polling**: Exponential backoff for fast startup detection
 
 ## Tech Stack
 
@@ -28,27 +32,74 @@ Ableton Live LSP provides Vim-like keybindings and LSP-style server functionalit
 ┌─────────────────┐
 │ Hammerspoon     │  Lua automation, keyboard shortcuts
 │ (Port: 9001)    │  Auto-detects Live open/close
+│                 │  Project file watcher (.als saves)
 └────────┬────────┘
-         │ TCP Socket
+         │ TCP Socket (colon-delimited protocol)
          ↓
 ┌─────────────────┐
 │ Remote Script   │  Python script running inside Live
 │ (LiveState.py)  │  Thread-safe API via schedule_message()
+│                 │  XML extraction from .als files
 └────────┬────────┘
          │ Live API
          ↓
 ┌─────────────────┐
 │ Ableton Live    │  Tracks, scenes, views, etc.
 └─────────────────┘
+         │
+         ↓ .als file save (gzipped XML)
+┌─────────────────┐
+│ WebSocket       │  AST server (port 8765)
+│ Server          │  Real-time project tree viewer
+│ (uv/Python)     │  Parses XML into structured AST
+└─────────────────┘
 ```
 
 ## Communication Protocol
+
+### Remote Script Socket (Port 9001)
 - Hammerspoon sends commands via TCP socket to port 9001
+- **Protocol format**: Colon-delimited (e.g., `COMMAND:param1:param2`)
 - Commands are processed thread-safely using `schedule_message()`
 - Fast path for `GET_VIEW` (no thread switching)
 - Expected response time: 20-50ms
+- Example commands:
+  - `GET_STATE` - Get current view and playback state
+  - `EXPORT_XML:/path/to/project.als` - Extract XML from .als file
+  - `JUMP_TO_FIRST` - Navigate to first track/scene
+
+### WebSocket Server (Port 8765)
+- Started automatically when .als file is saved
+- Serves project AST as JSON over WebSocket
+- Uses `uv` to run Python server
+- Located at: `~/Development/python/VimAbl/src/server`
+- XML files stored in: `<project>/.vimabl/<name>.xml`
+
+## Project Watcher System
+
+### Smart File Watching
+- **Broad mode**: Scans configured directories (depth 1) for any .als saves
+- **Narrow mode**: After first save, watches only active project directory
+- **Optimizations**:
+  - Skips backup folders (Backup/, Ableton Project Info/, Samples/, Recorded*)
+  - 3-second debouncing to prevent duplicate triggers
+  - 0.5-second delay after save before processing
+  - Exponential backoff for connection checks (starts at 5s)
+
+### Configuration
+- Watch directories defined in `src/hammerspoon/config.lua`
+- Default paths:
+  - `~/Music`
+  - `/Volumes/ExterneSSD/Ableton Projekte`
+
+### XML Extraction
+- .als files are gzipped XML - no Live API needed!
+- Direct decompression using Python's `gzip` module
+- Instant extraction (no waiting for Live API)
+- Stored in `.vimabl/<project_name>.xml`
 
 ## Platform
 - **macOS only** (Darwin 24.6.0)
 - Requires Ableton Live with Remote Script support
 - Uses macOS-specific Hammerspoon for automation
+- Requires `uv` for WebSocket server (installed at `~/.local/bin/uv`)
