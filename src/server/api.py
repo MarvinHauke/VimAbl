@@ -6,9 +6,11 @@ This provides a programmatic interface for:
 - Querying AST structure
 - Finding specific nodes
 - Computing diffs between versions
+- WebSocket streaming of AST updates
 - Future: LSP protocol implementation
 """
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -35,15 +37,27 @@ class ASTServer:
     """
     Server for managing Ableton Live project ASTs.
 
-    Provides high-level operations for LSP-like functionality.
+    Provides high-level operations for LSP-like functionality
+    and WebSocket streaming.
     """
 
-    def __init__(self):
+    def __init__(self, enable_websocket: bool = False, ws_host: str = "localhost", ws_port: int = 8765):
         self.current_ast: Optional[ASTNode] = None
         self.current_file: Optional[Path] = None
         self.serializer = SerializationVisitor()
         self.diff_visitor = DiffVisitor()
         self.search_visitor = SearchVisitor()
+
+        # WebSocket server (optional)
+        self.websocket_server: Optional[Any] = None
+        self.enable_websocket = enable_websocket
+        self.ws_host = ws_host
+        self.ws_port = ws_port
+
+        if enable_websocket:
+            # Import here to avoid dependency if WebSocket is not used
+            from ..websocket import ASTWebSocketServer
+            self.websocket_server = ASTWebSocketServer(ws_host, ws_port)
 
     def load_project(self, file_path: Path) -> Dict[str, Any]:
         """
@@ -66,6 +80,10 @@ class ASTServer:
 
         # Compute hashes
         hash_tree(self.current_ast)
+
+        # Broadcast to WebSocket clients if enabled
+        if self.websocket_server and self.websocket_server.is_running():
+            asyncio.create_task(self.websocket_server.broadcast_full_ast(self.current_ast))
 
         return {
             "status": "success",
@@ -315,3 +333,49 @@ class ASTServer:
 
         nodes = self.search_visitor.find_by_predicate(self.current_ast, predicate)
         return [self.serializer.visit(node) for node in nodes]
+
+    # WebSocket-related methods
+
+    async def start_websocket_server(self) -> None:
+        """Start the WebSocket server if enabled."""
+        if self.websocket_server:
+            await self.websocket_server.start()
+            # Set the current AST if already loaded
+            if self.current_ast:
+                self.websocket_server.set_ast(self.current_ast)
+
+    async def stop_websocket_server(self) -> None:
+        """Stop the WebSocket server if running."""
+        if self.websocket_server:
+            await self.websocket_server.stop()
+
+    async def broadcast_diff(self, diff_result: Dict[str, Any]) -> None:
+        """
+        Broadcast a diff to WebSocket clients.
+
+        Args:
+            diff_result: Diff result from DiffVisitor
+        """
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+
+    def get_websocket_status(self) -> Dict[str, Any]:
+        """
+        Get WebSocket server status.
+
+        Returns:
+            Dictionary with server status info
+        """
+        if not self.websocket_server:
+            return {
+                "enabled": False,
+                "running": False,
+            }
+
+        return {
+            "enabled": True,
+            "running": self.websocket_server.is_running(),
+            "host": self.ws_host,
+            "port": self.ws_port,
+            "clients": self.websocket_server.get_client_count(),
+        }

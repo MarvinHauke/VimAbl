@@ -2,3 +2,9 @@
 
 # File watching for automatic reloading
 watchdog>=3.0.0
+
+# WebSocket server for AST streaming
+websockets>=12.0
+
+# HTTP server for serving static files (Svelte frontend)
+aiohttp>=3.9.0
