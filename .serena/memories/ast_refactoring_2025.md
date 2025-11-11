@@ -1,9 +1,9 @@
-# AST Refactoring - LSP-Oriented Architecture (2025-11-10)
+# AST Refactoring - LSP-Oriented Architecture (2025-11-11 Update)
 
 ## Overview
-Successfully refactored the Ableton Live AST parser from a simple dict-based parser to a full LSP-oriented architecture with structured node classes, visitor patterns, and server API.
+Successfully expanded the Ableton Live AST parser to include full device and clip extraction. The parser now extracts tracks, devices, clips, and file references with rich metadata.
 
-## New Directory Structure
+## Directory Structure
 
 ```
 src/
@@ -11,7 +11,9 @@ src/
 │   ├── xml_loader.py      # Decompress .als, load XML
 │   ├── file_refs.py       # Extract FileRef + hashes
 │   ├── tracks.py          # Extract track info
-│   ├── ast_builder.py     # Build raw dict AST
+│   ├── devices.py         # NEW: Extract devices (instruments, effects, plugins)
+│   ├── clips.py           # NEW: Extract clips (MIDI, audio)
+│   ├── ast_builder.py     # Build comprehensive AST
 │   └── utils.py           # Shared helpers
 │
 ├── ast/             # AST node classes and manipulation
@@ -19,9 +21,16 @@ src/
 │   ├── visitor.py         # Visitor patterns
 │   └── hashing.py         # Incremental SHA-256 hashing
 │
-└── server/          # LSP-like server interface
-    ├── api.py             # ASTServer API
-    └── watcher.py         # File monitoring (optional)
+├── server/          # LSP-like server interface
+│   ├── api.py             # ASTServer API (updated for devices/clips)
+│   └── watcher.py         # File monitoring (optional)
+│
+└── .claude/         # Claude Code commands
+    └── commands/
+        ├── todo-review.md   # Mark tasks as in-review [~]
+        ├── todo-approve.md  # Approve tasks [~] -> [x]
+        ├── todo-uncheck.md  # Uncheck buggy tasks -> [ ]
+        └── todo-progress.md # Show progress statistics
 ```
 
 ## Key Components
@@ -32,42 +41,114 @@ src/
 - **Specialized Nodes**:
   - `ProjectNode` - Root of AST
   - `TrackNode` - Audio/MIDI tracks with index, name, mute/solo state
-  - `DeviceNode` - Instruments and effects
-  - `ClipNode` - MIDI/audio clips with timing info
+  - `DeviceNode` - Instruments and effects ✨ NEW
+  - `ClipNode` - MIDI/audio clips with timing info ✨ NEW
   - `FileRefNode` - External file references
   - `SceneNode` - Session view scenes
   - `ParameterNode` - Automatable parameters
 
-### 2. Visitor Patterns (src/ast/visitor.py)
-- **ASTVisitor** - Base visitor with double dispatch pattern
-- **SerializationVisitor** - Convert AST to JSON with optional hash inclusion
-- **DiffVisitor** - Compare two ASTs, find added/removed/modified nodes
-- **PrettyPrintVisitor** - Human-readable indented output
-- **SearchVisitor** - Query by ID, type, or predicate function
+### 2. Device Extraction (src/parser/devices.py) ✨ NEW
 
-### 3. Hashing System (src/ast/hashing.py)
-- **NodeHasher** - Computes SHA-256 for nodes
-- **Incremental hashing** - Parent hash includes only child hashes, not full content
-- **Fast change detection** - Compare hashes instead of full tree traversal
-- **`hash_tree()`** - Convenience function to hash entire tree
-- **`find_modified_nodes()`** - Efficiently find changes between versions
+Extracts all device types from tracks:
+- **Instruments**: InstrumentGroupDevice, PluginDevice
+- **Audio Effects**: AudioEffectGroupDevice, Compressor2, EQ8, Reverb, etc.
+- **MIDI Effects**: MidiArpeggiator, MidiNoteLength, etc.
+- **Plugins**: VST, AU, VST3 with manufacturer info
 
-### 4. AST Server (src/server/api.py)
-High-level API for LSP features:
-- `load_project(path)` - Load .als file, build AST, compute hashes
-- `get_ast_json(include_hash)` - Serialize full AST to JSON
-- `find_node_by_id(id)` - Query specific node
-- `find_nodes_by_type(type)` - Find all nodes of a type
-- `diff_with_file(other_path)` - Compare with another project
-- `get_project_info()` - Get statistics (track count, file refs, etc.)
-- `query_nodes(predicate)` - Simple predicate-based search
+**Extracted Data:**
+- Device name and type
+- On/Off state (is_enabled)
+- Plugin info (name, manufacturer/vendor)
+- Device parameters (float, enum)
+- Device chains (racks)
 
-### 5. File Watcher (src/server/watcher.py)
-Optional component (requires `watchdog` package):
-- **FileWatcher** - Monitor .als/.xml files for changes
-- **Debouncing** - Avoid duplicate events (1 second window)
-- **Context manager support** - `with FileWatcher(...) as watcher:`
-- **Callback-based** - Execute custom function on file change
+**Example:**
+```python
+{
+    'name': 'Sub 37 Editor',
+    'type': 'au_plugin',
+    'is_enabled': True,
+    'plugin_info': {
+        'plugin_name': 'Sub 37 Editor',
+        'plugin_manufacturer': 'Moog Music Inc.'
+    },
+    'parameters': [...]
+}
+```
+
+### 3. Clip Extraction (src/parser/clips.py) ✨ NEW
+
+Extracts clips from session and arrangement views:
+- **MIDI Clips**: Note counts, time signature, timing
+- **Audio Clips**: Sample references, warp settings
+- **Common**: Loop settings, colors, start/end times
+
+**Extracted Data:**
+- Clip name and type (midi/audio)
+- Start/end time, loop start/end
+- Loop enabled state
+- Color
+- View (session/arrangement)
+- **MIDI-specific**: Note count, has_notes flag
+- **Audio-specific**: Sample name/path, warp mode, is_warped
+
+**Example:**
+```python
+{
+    'name': 'Unnamed',
+    'type': 'midi',
+    'start_time': 0.0,
+    'end_time': 64.0,
+    'loop_start': 0.0,
+    'loop_end': 64.0,
+    'is_looped': True,
+    'color': 41,
+    'view': 'session',
+    'note_count': 249,
+    'has_notes': True
+}
+```
+
+### 4. Updated AST Builder (src/parser/ast_builder.py)
+
+Now enriches tracks with devices and clips:
+```python
+def build_ast(root):
+    tracks = extract_tracks(root)
+    track_elements = root.findall('.//Tracks/*')
+    
+    for i, track_elem in enumerate(track_elements):
+        if i < len(tracks):
+            tracks[i]['devices'] = extract_devices(track_elem)
+            tracks[i]['clips'] = extract_clips(track_elem)
+    
+    return {
+        "tracks": tracks,
+        "file_refs": extract_file_refs(root),
+    }
+```
+
+### 5. Updated AST Server (src/server/api.py)
+
+Converts devices and clips to structured nodes:
+- Creates DeviceNode for each device
+- Creates ClipNode for each clip
+- Maintains parent-child relationships (Track -> Device/Clip)
+- Computes hashes for change detection
+- Includes device/clip counts in `get_project_info()`
+
+### 6. TODO Tracking System ✨ NEW
+
+Three-state task management:
+- `[ ]` Unchecked - not started
+- `[~]` In Review - work completed, needs approval
+- `[x]` Completed - approved and verified
+
+**Commands:**
+- `/todo-review` - Mark task as in-review after completing work
+- `/todo-approve` - Approve reviewed task (move to completed)
+- `/todo-uncheck` - Mark task as incomplete (bug found)
+- `/todo-progress` - Show progress statistics
 
 ## CLI Usage (src/main.py)
 
@@ -84,108 +165,60 @@ python3 -m src.main example.als --mode=server
 python3 -m src.main example.als --mode=info
 ```
 
-## Migration from Old Structure
+## Test Results - Example Project
 
-**Before:**
-```
-src/ast/
-├── xml_loader.py
-├── file_refs.py
-├── tracks.py
-├── ast_builder.py
-└── utils.py
-```
+Tested with `Example_Project/example.als`:
 
-**After:**
-```
-src/parser/        # Moved parsing logic here
-src/ast/           # NEW: Node manipulation
-src/server/        # NEW: LSP interface
+```json
+{
+  "num_tracks": 39,
+  "num_devices": 99,
+  "num_clips": 217,
+  "num_file_refs": 1005,
+  "root_hash": "98cad12cbca5c1b94335ba4fb429e50b..."
+}
 ```
 
-## Import Changes
+**Device Breakdown:**
+- 17 AU plugins (Moog, Soundtoys, FabFilter, Arturia)
+- 32 audio effects (EQ8, Compressor, Reverb, etc.)
+- 32 audio effect groups (device chains/racks)
+- 5 instruments
+- 1 MIDI effect group
+- 12 VST plugins
 
-Old:
-```python
-from src.ast.xml_loader import load_ableton_xml
-from src.ast.ast_builder import build_ast
-```
+**Clip Breakdown:**
+- 78 MIDI clips
+- 139 Audio clips
+- Sample MIDI clips: 249 notes, 50 notes, 233 notes, 18 notes
 
-New:
-```python
-from src.parser import load_ableton_xml, build_ast
-from src.server import ASTServer
-from src.ast import TrackNode, SearchVisitor, hash_tree
-```
+**Example Extracted Data:**
+- **Track 2**: "Ext. Instrument" + "Sub 37 Editor" (Moog) + MIDI clip (18 notes)
+- **Plugins found**: Sub 37 Editor, Pre 1973, Little Plate, Decapitator, Pro-Q 4, Sie-Q
+- **Effect Groups**: "EQ Eight | Utility", "Tuner | Auto Pan-Tremolo | EQ Eight | Utility"
 
-## Code Examples
+## Completed Work (Phase 1a: Devices & Clips)
 
-### Load and Query Project
-```python
-from src.server import ASTServer
-from src.ast import SearchVisitor, NodeType
-from pathlib import Path
+✅ **Created:**
+- `src/parser/devices.py` - Full device extraction
+- `src/parser/clips.py` - Full clip extraction
+- Updated `src/parser/ast_builder.py` - Integration
+- Updated `src/server/api.py` - Node tree building
 
-# Load project
-server = ASTServer()
-server.load_project(Path('example.als'))
+✅ **Features:**
+- Device name, type, and plugin info extraction
+- Clip timing, loop settings, and metadata
+- MIDI clip note counting
+- Audio clip warp settings
+- Parent-child relationships (Track -> Device/Clip)
+- Incremental hashing for all nodes
 
-# Get info
-info = server.get_project_info()
-# {'num_tracks': 39, 'num_file_refs': 1005, ...}
-
-# Search for tracks
-search = SearchVisitor()
-tracks = search.find_by_type(server.current_ast, NodeType.TRACK)
-
-# Find specific node
-track_0 = search.find_by_id(server.current_ast, 'track_0')
-```
-
-### Diff Two Projects
-```python
-server = ASTServer()
-server.load_project(Path('version1.als'))
-changes = server.diff_with_file(Path('version2.als'))
-# Returns list of added/removed/modified nodes
-```
-
-### Watch for Changes
-```python
-from src.server import FileWatcher
-
-def on_change(file_path):
-    server.load_project(file_path)
-    print(f"Reloaded: {server.get_project_info()}")
-
-watcher = FileWatcher(on_change)
-watcher.watch(Path('example.als'))
-watcher.start()
-```
-
-## Testing Results
-
-All functionality tested and working:
-- ✅ Legacy mode maintains exact backward compatibility
-- ✅ Server mode produces structured AST with hashes
-- ✅ Info mode shows correct statistics
-- ✅ Visitor patterns work correctly
-- ✅ Search by ID/type operational
-- ✅ Node relationships (parent/child) correct
-
-**Test project stats:**
-- 39 tracks found
-- 1005 file references extracted
-- Root hash computed: `bfc8f68fcf91ec1979efe9728b110758...`
-
-## Dependencies
-
-Added `requirements.txt`:
-```
-watchdog>=3.0.0  # Optional, for file watching
-```
-
-FileWatcher import is wrapped in try/except, so it's truly optional.
+✅ **Verified:**
+- All 99 devices extracted correctly
+- All 217 clips extracted correctly
+- Plugin names and manufacturers correct
+- Note counts accurate
+- Structure validated against Ableton Live project
 
 ## Architecture Benefits
 
@@ -193,29 +226,43 @@ FileWatcher import is wrapped in try/except, so it's truly optional.
 2. **Extensibility** - Easy to add new node types and visitor operations
 3. **Performance** - Incremental hashing enables fast diff/caching
 4. **Type Safety** - Structured nodes with attributes instead of raw dicts
-5. **Testability** - Each component independently testable
-6. **LSP-Ready** - Clean API ready for protocol implementation
+5. **Rich Metadata** - Full device and clip information
+6. **Testability** - Each component independently testable
+7. **LSP-Ready** - Clean API ready for protocol implementation
 
-## Next Steps for LSP Implementation
+## Next Steps (From TODO.md)
 
-1. **Expand parser** - Extract devices, clips, automation
-2. **LSP protocol handlers** - Implement textDocument/*, workspace/* methods
-3. **Rename/refactor operations** - Modify AST and write back to XML
-4. **Hover/completion** - Use AST queries for editor features
-5. **Transport layer** - Add stdio/socket communication
-6. **Caching** - Use hashes to avoid reparsing unchanged files
-7. **Custom methods** - Add ableton/* protocol extensions
+### Phase 1b: Scenes & Mixer (Next Priority)
+- [ ] Create `src/parser/scenes.py` - Extract scene information
+- [ ] Create `src/parser/mixer.py` - Parse mixer settings (volume, pan, sends)
+- [ ] Update AST builder and server API
+
+### Phase 2: Remote Script Integration
+- [ ] Add document observer to remote_script
+- [ ] Implement XML export command
+- [ ] Create `.vimabl/` folder structure
+- [ ] Auto-export on save
+
+### Phase 3: AST Service
+- [ ] Create background service with file watching
+- [ ] Socket server on port 9002
+- [ ] Auto-parse and cache AST
+
+### Phase 4+: Hammerspoon Integration, LSP Protocol, etc.
 
 ## File Locations
 
 - Parser: `src/parser/*.py`
-- AST: `src/ast/*.py` 
+- AST: `src/ast/*.py`
 - Server: `src/server/*.py`
 - CLI: `src/main.py`
-- Tests: Verified via CLI modes
-- Docs: `REFACTORING_SUMMARY.md`
+- TODO tracking: `.claude/commands/todo-*.md`
+- Master TODO: `TODO.md`
+- Integration plan: Merged into `TODO.md`
 
 ## Related Memories
 
 - `codebase_structure` - Overall project layout
 - `project_overview` - High-level goals (Vim-like + LSP)
+- `coding_style` - Python and Lua conventions
+- `task_completion_checklist` - Development workflow

@@ -22,7 +22,7 @@
         "--context",
         "ide-assistant",
         "--project",
-        "/Users/pforsten/Development/python/Ableton-Live-LSP"
+        "/Users/pforsten/Development/python/VimAbl/"
       ],
       "env": {}
     }

@@ -19,6 +19,8 @@ from ..ast import (
     NodeType,
     ProjectNode,
     TrackNode,
+    DeviceNode,
+    ClipNode,
     FileRefNode,
     SerializationVisitor,
     DiffVisitor,
@@ -78,13 +80,53 @@ class ASTServer:
         """
         project = ProjectNode(id="project")
 
-        # Add tracks
+        # Add tracks with devices and clips
         for track_data in raw_ast.get("tracks", []):
             track_node = TrackNode(
                 name=track_data["name"],
                 index=track_data["index"],
                 id=f"track_{track_data['index']}"
             )
+
+            # Add devices to track
+            for device_idx, device_data in enumerate(track_data.get("devices", [])):
+                device_node = DeviceNode(
+                    name=device_data.get("name", "Unknown"),
+                    device_type=device_data.get("type", "unknown"),
+                    id=f"device_{track_data['index']}_{device_idx}"
+                )
+                device_node.attributes['is_enabled'] = device_data.get("is_enabled", True)
+                device_node.attributes['plugin_info'] = device_data.get("plugin_info", {})
+                device_node.attributes['parameters'] = device_data.get("parameters", [])
+
+                track_node.add_child(device_node)
+
+            # Add clips to track
+            for clip_idx, clip_data in enumerate(track_data.get("clips", [])):
+                clip_node = ClipNode(
+                    name=clip_data.get("name", "Untitled"),
+                    clip_type=clip_data.get("type", "midi"),
+                    id=f"clip_{track_data['index']}_{clip_idx}"
+                )
+                clip_node.attributes['start_time'] = clip_data.get("start_time", 0.0)
+                clip_node.attributes['end_time'] = clip_data.get("end_time", 0.0)
+                clip_node.attributes['loop_start'] = clip_data.get("loop_start", 0.0)
+                clip_node.attributes['loop_end'] = clip_data.get("loop_end", 0.0)
+                clip_node.attributes['is_looped'] = clip_data.get("is_looped", True)
+                clip_node.attributes['color'] = clip_data.get("color", -1)
+                clip_node.attributes['view'] = clip_data.get("view", "session")
+
+                # Add type-specific attributes
+                if clip_data.get("type") == "midi":
+                    clip_node.attributes['note_count'] = clip_data.get("note_count", 0)
+                    clip_node.attributes['has_notes'] = clip_data.get("has_notes", False)
+                elif clip_data.get("type") == "audio":
+                    clip_node.attributes['sample_name'] = clip_data.get("sample_name", "")
+                    clip_node.attributes['is_warped'] = clip_data.get("is_warped", False)
+                    clip_node.attributes['warp_mode'] = clip_data.get("warp_mode", "Unknown")
+
+                track_node.add_child(clip_node)
+
             project.add_child(track_node)
 
         # Add file references
@@ -191,12 +233,16 @@ class ASTServer:
             raise RuntimeError("No project loaded")
 
         tracks = self.search_visitor.find_by_type(self.current_ast, NodeType.TRACK)
+        devices = self.search_visitor.find_by_type(self.current_ast, NodeType.DEVICE)
+        clips = self.search_visitor.find_by_type(self.current_ast, NodeType.CLIP)
         file_refs = self.search_visitor.find_by_type(self.current_ast, NodeType.FILE_REF)
 
         return {
             "file": str(self.current_file) if self.current_file else None,
             "root_hash": self.current_ast.hash,
             "num_tracks": len(tracks),
+            "num_devices": len(devices),
+            "num_clips": len(clips),
             "num_file_refs": len(file_refs),
             "track_names": [t.attributes.get("name") for t in tracks],
         }
