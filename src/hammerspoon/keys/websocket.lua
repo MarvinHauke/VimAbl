@@ -1,6 +1,6 @@
 -- WebSocket server keybindings for VimAbl TreeViewer
-local liveState = require("live_state")
 local wsManager = require("websocket_manager")
+local projectWatcher = require("project_watcher")
 
 local M = {}
 
@@ -11,8 +11,8 @@ function M.setup()
 			wsManager.stop()
 			hs.alert.show("WebSocket Server Stopped")
 		else
-			-- Get current project from Live
-			local projectPath = liveState.getProjectPath()
+			-- Check if we have detected a project path
+			local projectPath = projectWatcher.lastDetectedProject or wsManager.projectPath
 			if projectPath then
 				local success = wsManager.start(projectPath)
 				if success then
@@ -21,7 +21,7 @@ function M.setup()
 					hs.alert.show("Failed to start WebSocket server")
 				end
 			else
-				hs.alert.show("No project loaded in Ableton\nSave your project first!")
+				hs.alert.show("No project detected\nSave your project (Cmd+S) and try again!")
 			end
 		end
 	end)

@@ -31,6 +31,7 @@ class CommandHandlers:
             "GET_VIEW": self._handle_get_view,           # Direct - no self.song() access
             "GET_STATE": self._handle_get_state,         # Threaded - needs self.song().is_playing
             "GET_PROJECT_PATH": self._handle_get_project_path,  # Direct - application property
+            "EXPORT_XML": self._handle_export_xml,       # Threaded - saves the project as XML (requires project_path param)
             "SCROLL_TO_TOP": self._handle_scroll_to_top,
             "SCROLL_TO_BOTTOM": self._handle_scroll_to_bottom,
             "JUMP_TO_FIRST": self._handle_jump_to_first,  # Smart command - auto-detects view
@@ -59,16 +60,46 @@ class CommandHandlers:
     def _handle_get_project_path(self, params=None):
         """Handle GET_PROJECT_PATH command"""
         try:
-            # Get the current document/project
-            document = self.application.get_document()
-            if document and hasattr(document, 'path'):
-                path = str(document.path) if document.path else None
-                self.log_message(f"Project path: {path}")
+            # Try multiple methods to get the project path
+            path = None
+
+            # Method 1: Try application.get_document()
+            try:
+                document = self.application.get_document()
+                if document and hasattr(document, 'path') and document.path:
+                    path = str(document.path)
+                    self.log_message(f"Method 1 (get_document): Found path: {path}")
+            except Exception as e:
+                self.log_message(f"Method 1 (get_document) failed: {str(e)}")
+
+            # Method 2: Try song().canonical_parent
+            if not path:
+                try:
+                    song = self.song()
+                    if hasattr(song, 'canonical_parent') and song.canonical_parent:
+                        canonical = song.canonical_parent
+                        if hasattr(canonical, 'canonical_parent') and canonical.canonical_parent:
+                            path = str(canonical.canonical_parent)
+                            self.log_message(f"Method 2 (canonical_parent): Found path: {path}")
+                except Exception as e:
+                    self.log_message(f"Method 2 (canonical_parent) failed: {str(e)}")
+
+            # Method 3: Check if song has path attribute directly
+            if not path:
+                try:
+                    song = self.song()
+                    if hasattr(song, 'path') and song.path:
+                        path = str(song.path)
+                        self.log_message(f"Method 3 (song.path): Found path: {path}")
+                except Exception as e:
+                    self.log_message(f"Method 3 (song.path) failed: {str(e)}")
+
+            if path:
                 return {
                     "project_path": path
                 }
             else:
-                self.log_message("No document or path available")
+                self.log_message("All methods failed - no document or path available")
                 return {
                     "project_path": None
                 }
@@ -76,6 +107,98 @@ class CommandHandlers:
             self.log_message(f"Failed to get project path: {str(e)}")
             return {
                 "project_path": None,
+                "error": str(e)
+            }
+
+    def _handle_export_xml(self, params=None):
+        """Handle EXPORT_XML command - exports project as XML to .vimabl directory
+
+        Args:
+            params: list with optional project path as first element (colon-delimited format).
+                    If provided, uses that path directly.
+                    If not provided, attempts to detect the path from the Live API.
+        """
+        try:
+            import os
+
+            # Check if project_path was provided as a parameter (colon-delimited format: EXPORT_XML:path)
+            project_path = None
+            if params and isinstance(params, list) and len(params) > 0:
+                project_path = params[0]
+                self.log_message(f"Export: Using provided project path: {project_path}")
+
+            # If no path provided, try multiple methods to detect it
+            if not project_path:
+                self.log_message("Export: No project path provided, attempting auto-detection...")
+
+                # Method 1: Try application.get_document()
+                try:
+                    document = self.application.get_document()
+                    if document and hasattr(document, 'path') and document.path:
+                        project_path = str(document.path)
+                        self.log_message(f"Export: Method 1 (get_document) found path: {project_path}")
+                except Exception as e:
+                    self.log_message(f"Export: Method 1 (get_document) failed: {str(e)}")
+
+                # Method 2: Try song().canonical_parent
+                if not project_path:
+                    try:
+                        song = self.song()
+                        if hasattr(song, 'canonical_parent') and song.canonical_parent:
+                            canonical = song.canonical_parent
+                            if hasattr(canonical, 'canonical_parent') and canonical.canonical_parent:
+                                project_path = str(canonical.canonical_parent)
+                                self.log_message(f"Export: Method 2 (canonical_parent) found path: {project_path}")
+                    except Exception as e:
+                        self.log_message(f"Export: Method 2 (canonical_parent) failed: {str(e)}")
+
+                # Method 3: Check if song has path attribute directly
+                if not project_path:
+                    try:
+                        song = self.song()
+                        if hasattr(song, 'path') and song.path:
+                            project_path = str(song.path)
+                            self.log_message(f"Export: Method 3 (song.path) found path: {project_path}")
+                    except Exception as e:
+                        self.log_message(f"Export: Method 3 (song.path) failed: {str(e)}")
+
+            # If no path found, return error
+            if not project_path:
+                self.log_message("Cannot export XML: project not saved or path not available")
+                return {
+                    "success": False,
+                    "error": "Project must be saved before exporting XML"
+                }
+
+            # Extract project directory and name
+            project_dir = os.path.dirname(project_path)
+            project_name = os.path.splitext(os.path.basename(project_path))[0]
+
+            # Create .vimabl directory
+            vimabl_dir = os.path.join(project_dir, ".vimabl")
+            if not os.path.exists(vimabl_dir):
+                os.makedirs(vimabl_dir)
+                self.log_message(f"Created .vimabl directory: {vimabl_dir}")
+
+            # Extract XML from .als file (which is gzipped XML)
+            # .als files are just gzipped XML, so we decompress them
+            import gzip
+            xml_path = os.path.join(vimabl_dir, f"{project_name}.xml")
+
+            with gzip.open(project_path, 'rb') as f_in:
+                with open(xml_path, 'wb') as f_out:
+                    f_out.write(f_in.read())
+
+            self.log_message(f"Extracted XML from .als file: {xml_path}")
+            return {
+                "success": True,
+                "xml_path": xml_path,
+                "project_path": project_path
+            }
+        except Exception as e:
+            self.log_message(f"Failed to export XML: {str(e)}")
+            return {
+                "success": False,
                 "error": str(e)
             }
 

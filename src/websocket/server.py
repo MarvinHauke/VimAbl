@@ -41,6 +41,7 @@ class ASTWebSocketServer:
         self.broadcaster = MessageBroadcaster()
         self.server: Optional[Any] = None
         self._current_ast: Optional[ASTNode] = None
+        self._project_path: Optional[str] = None
         self._on_client_message: Optional[Callable] = None
         self._running = False
 
@@ -108,7 +109,7 @@ class ASTWebSocketServer:
         try:
             # Send the current AST if available
             if self._current_ast:
-                message = create_full_ast_message(self._current_ast)
+                message = create_full_ast_message(self._current_ast, self._project_path)
                 await self.broadcaster.send_to_client(websocket, message)
             else:
                 # Send a message indicating no AST is loaded
@@ -149,15 +150,18 @@ class ASTWebSocketServer:
             # Unregister the client
             await self.broadcaster.unregister(websocket)
 
-    async def broadcast_full_ast(self, ast: ASTNode) -> None:
+    async def broadcast_full_ast(self, ast: ASTNode, project_path: Optional[str] = None) -> None:
         """
         Broadcast the full AST to all clients.
 
         Args:
             ast: The root AST node
+            project_path: Optional path to the project file
         """
         self._current_ast = ast
-        message = create_full_ast_message(ast)
+        if project_path:
+            self._project_path = project_path
+        message = create_full_ast_message(ast, self._project_path)
         await self.broadcaster.broadcast(message)
         logger.info("Broadcasted full AST to all clients")
 

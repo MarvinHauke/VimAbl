@@ -120,19 +120,25 @@ def create_message(msg_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def create_full_ast_message(root: ASTNode) -> Dict[str, Any]:
+def create_full_ast_message(root: ASTNode, project_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Create a FULL_AST message.
 
     Args:
         root: Root AST node
+        project_path: Optional path to the project file
 
     Returns:
         Message dictionary
     """
-    return create_message('FULL_AST', {
+    payload = {
         'ast': serialize_node(root),
-    })
+    }
+
+    if project_path:
+        payload['project_path'] = project_path
+
+    return create_message('FULL_AST', payload)
 
 
 def create_diff_message(diff_result: Dict[str, Any]) -> Dict[str, Any]:

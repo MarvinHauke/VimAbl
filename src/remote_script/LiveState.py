@@ -38,7 +38,33 @@ class LiveState(ControlSurface):
         )
         self.server.start()
 
+        # Listen for document path changes (e.g., Save As, first save)
+        self._setup_document_listener()
+
         self.log_message("Live State Remote Script initialized")
+
+    def _setup_document_listener(self):
+        """Set up listener for document path changes"""
+        try:
+            document = self.application.get_document()
+            if document and hasattr(document, 'add_path_listener'):
+                document.add_path_listener(self._on_document_path_changed)
+                self.log_message("Document path listener added")
+        except Exception as e:
+            self.log_message(f"Failed to add document listener: {str(e)}")
+
+    def _on_document_path_changed(self):
+        """Called when the document path changes (e.g., after Save As or first save)"""
+        try:
+            document = self.application.get_document()
+            if document and document.path:
+                path = str(document.path)
+                self.log_message(f"Document path changed to: {path}")
+                # Broadcast the path change via the server
+                # This allows Hammerspoon/WebSocket to react to the save
+                self.server.broadcast_event("PROJECT_PATH_CHANGED", {"project_path": path})
+        except Exception as e:
+            self.log_message(f"Error in document path listener: {str(e)}")
 
     def disconnect(self):
         """Called when script is disconnected"""

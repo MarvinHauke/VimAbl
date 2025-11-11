@@ -83,7 +83,7 @@ class ASTServer:
 
         # Broadcast to WebSocket clients if enabled
         if self.websocket_server and self.websocket_server.is_running():
-            asyncio.create_task(self.websocket_server.broadcast_full_ast(self.current_ast))
+            asyncio.create_task(self.websocket_server.broadcast_full_ast(self.current_ast, str(file_path)))
 
         return {
             "status": "success",
