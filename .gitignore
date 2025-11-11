@@ -83,6 +83,7 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.envrc.local
 
 # Project specific
 *.pyc
