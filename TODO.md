@@ -92,19 +92,19 @@ AST Service (Background Process)
 
 ### Phase 1b: Scenes & Mixer
 
-- [ ] Create `src/parser/scenes.py` - Extract scene information
-  - [ ] Parse scene names and indices
-  - [ ] Extract scene tempo settings
-  - [ ] Link scenes to clip slots
-- [ ] Create `src/parser/mixer.py` - Parse mixer settings
-  - [ ] Extract volume, pan, mute, solo state
-  - [ ] Parse send levels for each track
-  - [ ] Extract crossfader assignment
-- [ ] Update `src/parser/ast_builder.py` to include scenes and mixer
-- [ ] Update `src/server/api.py` to handle SceneNode and MixerNode
-- [ ] Test: `python3 -m src.main Example_Project/example.als --mode=info`
-  - [ ] Verify scene count is correct
-  - [ ] Verify mixer settings are captured
+- [x] Create `src/parser/scenes.py` - Extract scene information
+  - [x] Parse scene names and indices
+  - [x] Extract scene tempo settings
+  - [x] Link scenes to clip slots
+- [x] Create `src/parser/mixer.py` - Parse mixer settings
+  - [x] Extract volume, pan, mute, solo state
+  - [x] Parse send levels for each track
+  - [x] Extract crossfader assignment
+- [x] Update `src/parser/ast_builder.py` to include scenes and mixer
+- [x] Update `src/server/api.py` to handle SceneNode and MixerNode
+- [x] Test: `python3 -m src.main Example_Project/example.als --mode=info`
+  - [x] Verify scene count is correct
+  - [x] Verify mixer settings are captured
 
 ### Phase 1c: Automation
 
@@ -358,6 +358,19 @@ AST Service (Background Process)
 - [ ] Track AST changes over time
 - [ ] Implement undo/redo based on AST diffs
 - [ ] Visualize change history
+
+---
+
+## Phase 9: Web Visualizer (OPTIONAL)
+
+**Priority: LOW**
+**Dependencies: Phase 1 complete (full AST)**
+**Branch: feature/web-visualizer (separate from feature/AST)**
+
+- [ ] WebSocket server setup (aiohttp/FastAPI)
+- [ ] Svelte frontend with tree visualization
+- [ ] Real-time updates integration
+- [ ] See: SVELTE_TREEVIEWER.md
 
 ---
 

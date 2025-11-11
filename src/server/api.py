@@ -22,6 +22,8 @@ from ..ast import (
     DeviceNode,
     ClipNode,
     FileRefNode,
+    SceneNode,
+    MixerNode,
     SerializationVisitor,
     DiffVisitor,
     SearchVisitor,
@@ -127,7 +129,38 @@ class ASTServer:
 
                 track_node.add_child(clip_node)
 
+            # Add mixer settings to track
+            mixer_data = track_data.get("mixer")
+            if mixer_data:
+                mixer_node = MixerNode(
+                    volume=mixer_data.get("volume", 1.0),
+                    pan=mixer_data.get("pan", 0.0),
+                    id=f"mixer_{track_data['index']}"
+                )
+                mixer_node.attributes['is_muted'] = mixer_data.get("is_muted", False)
+                mixer_node.attributes['is_soloed'] = mixer_data.get("is_soloed", False)
+                mixer_node.attributes['crossfader'] = mixer_data.get("crossfader", "None")
+                mixer_node.attributes['sends'] = mixer_data.get("sends", [])
+
+                track_node.add_child(mixer_node)
+
             project.add_child(track_node)
+
+        # Add scenes
+        for scene_data in raw_ast.get("scenes", []):
+            scene_node = SceneNode(
+                name=scene_data.get("name", ""),
+                index=scene_data.get("index", 0),
+                id=f"scene_{scene_data.get('index', 0)}"
+            )
+            scene_node.attributes['color'] = scene_data.get("color", -1)
+            scene_node.attributes['tempo'] = scene_data.get("tempo", 120.0)
+            scene_node.attributes['is_tempo_enabled'] = scene_data.get("is_tempo_enabled", False)
+            scene_node.attributes['time_signature_id'] = scene_data.get("time_signature_id", 201)
+            scene_node.attributes['is_time_signature_enabled'] = scene_data.get("is_time_signature_enabled", False)
+            scene_node.attributes['annotation'] = scene_data.get("annotation", "")
+
+            project.add_child(scene_node)
 
         # Add file references
         for i, ref_data in enumerate(raw_ast.get("file_refs", [])):
@@ -235,6 +268,7 @@ class ASTServer:
         tracks = self.search_visitor.find_by_type(self.current_ast, NodeType.TRACK)
         devices = self.search_visitor.find_by_type(self.current_ast, NodeType.DEVICE)
         clips = self.search_visitor.find_by_type(self.current_ast, NodeType.CLIP)
+        scenes = self.search_visitor.find_by_type(self.current_ast, NodeType.SCENE)
         file_refs = self.search_visitor.find_by_type(self.current_ast, NodeType.FILE_REF)
 
         return {
@@ -243,6 +277,7 @@ class ASTServer:
             "num_tracks": len(tracks),
             "num_devices": len(devices),
             "num_clips": len(clips),
+            "num_scenes": len(scenes),
             "num_file_refs": len(file_refs),
             "track_names": [t.attributes.get("name") for t in tracks],
         }

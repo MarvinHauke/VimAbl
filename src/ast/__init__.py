@@ -16,6 +16,7 @@ from .node import (
     ClipNode,
     FileRefNode,
     SceneNode,
+    MixerNode,
     ParameterNode,
 )
 
@@ -42,6 +43,7 @@ __all__ = [
     "ClipNode",
     "FileRefNode",
     "SceneNode",
+    "MixerNode",
     "ParameterNode",
     # Visitors
     "ASTVisitor",

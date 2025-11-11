@@ -137,6 +137,18 @@ class SceneNode(ASTNode):
 
 
 @dataclass
+class MixerNode(ASTNode):
+    """Node representing mixer settings for a track."""
+
+    def __init__(self, volume: float = 1.0, pan: float = 0.0, **kwargs):
+        super().__init__(node_type=NodeType.MIXER, **kwargs)
+        self.attributes['volume'] = volume
+        self.attributes['pan'] = pan
+        self.attributes['is_muted'] = False
+        self.attributes['is_soloed'] = False
+
+
+@dataclass
 class ParameterNode(ASTNode):
     """Node representing an automatable parameter."""
 

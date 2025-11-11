@@ -197,15 +197,17 @@ Tested with `Example_Project/example.als`:
 - **Plugins found**: Sub 37 Editor, Pre 1973, Little Plate, Decapitator, Pro-Q 4, Sie-Q
 - **Effect Groups**: "EQ Eight | Utility", "Tuner | Auto Pan-Tremolo | EQ Eight | Utility"
 
-## Completed Work (Phase 1a: Devices & Clips)
+## Completed Work
 
-✅ **Created:**
+### Phase 1a: Devices & Clips ✅
+
+**Created:**
 - `src/parser/devices.py` - Full device extraction
 - `src/parser/clips.py` - Full clip extraction
 - Updated `src/parser/ast_builder.py` - Integration
 - Updated `src/server/api.py` - Node tree building
 
-✅ **Features:**
+**Features:**
 - Device name, type, and plugin info extraction
 - Clip timing, loop settings, and metadata
 - MIDI clip note counting
@@ -213,12 +215,36 @@ Tested with `Example_Project/example.als`:
 - Parent-child relationships (Track -> Device/Clip)
 - Incremental hashing for all nodes
 
-✅ **Verified:**
+**Verified:**
 - All 99 devices extracted correctly
 - All 217 clips extracted correctly
 - Plugin names and manufacturers correct
 - Note counts accurate
 - Structure validated against Ableton Live project
+
+### Phase 1b: Scenes & Mixer ✅
+
+**Created:**
+- `src/parser/scenes.py` - Scene extraction
+- `src/parser/mixer.py` - Mixer settings extraction
+- `src/ast/node.py` - Added MixerNode class
+- Updated `src/parser/ast_builder.py` - Integration
+- Updated `src/server/api.py` - Scene and Mixer node handling
+- Updated `src/ast/__init__.py` - Exported MixerNode
+
+**Features:**
+- Scene name, index, color extraction
+- Scene tempo and time signature settings
+- Mixer volume, pan, mute, solo state
+- Send levels and crossfader assignment
+- Parent-child relationships (Track -> Mixer)
+- Incremental hashing for all nodes
+
+**Verified:**
+- All 30 scenes extracted correctly
+- Mixer settings (volume, pan, sends) working
+- MixerNode properly integrated into AST
+- Project info includes scene count
 
 ## Architecture Benefits
 
@@ -232,10 +258,10 @@ Tested with `Example_Project/example.als`:
 
 ## Next Steps (From TODO.md)
 
-### Phase 1b: Scenes & Mixer (Next Priority)
-- [ ] Create `src/parser/scenes.py` - Extract scene information
-- [ ] Create `src/parser/mixer.py` - Parse mixer settings (volume, pan, sends)
-- [ ] Update AST builder and server API
+### Phase 1c: Automation (Next Priority)
+- [ ] Create `src/parser/automation.py` - Extract automation envelopes
+- [ ] Parse automation lanes and points
+- [ ] Link automation to parameters
 
 ### Phase 2: Remote Script Integration
 - [ ] Add document observer to remote_script
