@@ -94,6 +94,9 @@ function M.start(projectPath)
 		function(exitCode, stdOut, stdErr)
 			if exitCode == 0 then
 				print("[WebSocket] Server stopped cleanly")
+			elseif exitCode == 143 then
+				-- Exit code 143 = SIGTERM (expected when we call terminate())
+				print("[WebSocket] Server terminated (SIGTERM)")
 			else
 				print("[WebSocket] Server error (exit code " .. exitCode .. "): " .. (stdErr or ""))
 			end
@@ -111,6 +114,7 @@ function M.start(projectPath)
 		{
 			"run",
 			"python",
+			"-u",  -- Unbuffered output (important for hs.task streaming)
 			"-m",
 			"src.main",
 			M.xmlPath,

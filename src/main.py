@@ -39,32 +39,22 @@ async def run_websocket_server(path: Path, host: str, port: int, use_signals: bo
     print(f"  URL: ws://{ws_status['host']}:{ws_status['port']}")
     print(f"  Connected clients: {ws_status['clients']}")
 
-    if use_signals:
-        print("\nServer is running. Press Ctrl+C to stop.")
+    print("\nServer is running. Use websocket_manager.lua to stop." if not use_signals else "\nServer is running. Press Ctrl+C to stop.")
 
-        # Set up graceful shutdown with signal handlers
-        stop_event = asyncio.Event()
+    # Set up graceful shutdown
+    stop_event = asyncio.Event()
 
-        def signal_handler():
-            print("\nShutting down...")
-            stop_event.set()
+    def signal_handler():
+        print("\nShutting down...")
+        stop_event.set()
 
-        # Register signal handlers
-        loop = asyncio.get_event_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, signal_handler)
+    # Always register signal handlers (both modes need SIGTERM for clean shutdown)
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, signal_handler)
 
-        # Wait for stop signal
-        await stop_event.wait()
-    else:
-        print("\nServer is running. Use websocket_manager.lua to stop.")
-
-        # Keep server alive with infinite sleep (for hs.task)
-        try:
-            while True:
-                await asyncio.sleep(1)
-        except asyncio.CancelledError:
-            print("\nShutting down...")
+    # Wait for stop signal
+    await stop_event.wait()
 
     # Clean shutdown
     await server.stop_websocket_server()
