@@ -8,15 +8,6 @@ M.projectPath = nil
 M.xmlPath = nil
 M.fileWatcher = nil
 
--- Callback when .als file changes
-local function onFileChanged(paths)
-	for _, path in ipairs(paths) do
-		print("[WebSocket] Project file changed: " .. path)
-	end
-	print("[WebSocket] Reloading AST and restarting server...")
-	M.restart()
-end
-
 -- Export XML with retry logic (minimal retries since we pass path directly)
 local function exportXMLWithRetry(projectPath, maxRetries, retryDelay)
 	maxRetries = maxRetries or 2  -- Reduced from 3 to 2
@@ -38,6 +29,27 @@ local function exportXMLWithRetry(projectPath, maxRetries, retryDelay)
 	end
 
 	return nil, "Failed after " .. maxRetries .. " attempts"
+end
+
+-- Callback when .als file changes
+local function onFileChanged(paths)
+	for _, path in ipairs(paths) do
+		print("[WebSocket] Project file changed: " .. path)
+	end
+
+	-- Don't restart server - just re-export XML
+	-- The Python server will detect the XML change and broadcast diffs
+	print("[WebSocket] Re-exporting XML (server will detect changes)...")
+
+	if M.projectPath then
+		local xmlPath, exportError = exportXMLWithRetry(M.projectPath, 2, 0.5)
+		if xmlPath then
+			print("[WebSocket] XML re-exported successfully")
+			-- Server's file watcher will detect this and broadcast diff
+		else
+			print("[WebSocket] ERROR: Failed to re-export XML: " .. (exportError or "unknown error"))
+		end
+	end
 end
 
 -- Start WebSocket server for a project

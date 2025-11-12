@@ -59,12 +59,14 @@ class ASTServer:
             from ..websocket import ASTWebSocketServer
             self.websocket_server = ASTWebSocketServer(ws_host, ws_port)
 
-    def load_project(self, file_path: Path) -> Dict[str, Any]:
+    def load_project(self, file_path: Path, broadcast: bool = True) -> Dict[str, Any]:
         """
         Load an Ableton Live project file and build its AST.
 
         Args:
             file_path: Path to .als or .xml file
+            broadcast: Whether to broadcast full AST to WebSocket clients (default: True)
+                       Set to False if you're computing diffs manually
 
         Returns:
             Dictionary with status and basic project info
@@ -82,7 +84,7 @@ class ASTServer:
         hash_tree(self.current_ast)
 
         # Broadcast to WebSocket clients if enabled
-        if self.websocket_server and self.websocket_server.is_running():
+        if broadcast and self.websocket_server and self.websocket_server.is_running():
             asyncio.create_task(self.websocket_server.broadcast_full_ast(self.current_ast, str(file_path)))
 
         return {

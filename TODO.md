@@ -215,34 +215,36 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [x] Verify connection in browser console (logs show "Connected" and "FULL_AST" received)
   - [x] Check that AST data is received and stored (1074 nodes loaded successfully)
 
-### Phase 2c: Basic Tree Component ⚠️ PARTIALLY COMPLETE
+### Phase 2c: Basic Tree Component ✅ COMPLETE
 
-- [ ] Create `src/lib/components/TreeNode.svelte` - Recursive tree node **TODO**
-  - [ ] Display node type and name
-  - [ ] Show/hide children (collapsible)
-  - [ ] Display node attributes (hash, index, etc.)
-  - [ ] Recursive rendering of child nodes
-  - [ ] Add expand/collapse icons
-- [ ] Create `src/lib/components/TreeView.svelte` - Root tree container **TODO**
-  - [ ] Render top-level tree structure
-  - [ ] Handle empty state (no AST loaded)
-  - [ ] Add search/filter input (basic)
-  - [ ] Show project metadata (name, track count)
+- [x] Create `src/lib/components/TreeNode.svelte` - Recursive tree node
+  - [x] Display node type and name
+  - [x] Show/hide children (collapsible)
+  - [x] Display node attributes (node_id, name)
+  - [x] Recursive rendering of child nodes
+  - [x] Add expand/collapse icons (▶/▼)
+  - [x] Auto-expand first 2 levels
+- [x] Create `src/lib/components/TreeView.svelte` - Root tree container
+  - [x] Render top-level tree structure
+  - [x] Handle empty state (no AST loaded)
+  - [x] Show project metadata (total nodes, max depth, project path)
+  - [x] Display statistics (node count, tree depth)
+  - [ ] Add search/filter input (basic) - **DEFERRED to Phase 4a**
 - [x] Create `src/lib/components/ConnectionStatus.svelte` - Status indicator
   - [x] Show connection state (connected, disconnected, error)
   - [x] Display last update time
   - [x] Show error messages if any
 - [x] Create main page `src/routes/+page.svelte`
   - [x] Import and use ConnectionStatus component
+  - [x] Import and use TreeView component
   - [x] Add basic layout (header, main content)
   - [x] Style with Tailwind CSS
-  - [x] Basic AST display (shows root info and first 10 nodes)
-  - [ ] Import and use TreeView component **TODO - needs TreeView/TreeNode components**
+  - [x] Unsaved project warning (yellow banner)
 - [x] Test basic rendering
   - [x] Load example project in WebSocket server
   - [x] Open Svelte app in browser
-  - [x] Verify connection and AST data displays (1074 nodes loaded)
-  - [ ] Test expand/collapse functionality **TODO - awaiting TreeNode implementation**
+  - [x] Verify connection and AST data displays (482 nodes tested)
+  - [x] Test expand/collapse functionality (working)
 
 ---
 

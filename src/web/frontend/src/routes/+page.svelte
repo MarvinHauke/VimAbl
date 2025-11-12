@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { ASTWebSocketClient } from '$lib/api/websocket';
 	import { connectionStore } from '$lib/stores/connection';
-	import { astStore } from '$lib/stores/ast';
+	import { astStore } from '$lib/stores/ast.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
 	import TreeView from '$lib/components/TreeView.svelte';
 	import type { WebSocketMessage, FullASTMessage } from '$lib/types/ast';
@@ -21,6 +21,22 @@
 				if (message.type === 'FULL_AST') {
 					const fullMessage = message as FullASTMessage;
 					astStore.setAST(fullMessage.payload.ast, fullMessage.payload.project_path);
+					console.log('[WebSocket] Loaded full AST');
+				} else if (message.type === 'DIFF_UPDATE') {
+					// Apply incremental diff
+					const diffMessage = message as any;
+					if (diffMessage.payload?.diff) {
+						const diff = diffMessage.payload.diff;
+						// Combine all change types into a single array
+						const changes = [
+							...(diff.added || []),
+							...(diff.removed || []),
+							...(diff.modified || [])
+						];
+						console.log(`[WebSocket] Applying diff with ${changes.length} changes`);
+						console.log('[WebSocket] Diff payload:', diffMessage.payload);
+						astStore.applyDiff(changes);
+					}
 				} else if (message.type === 'ERROR') {
 					connectionStore.setError(message.payload.error);
 				}
@@ -45,7 +61,7 @@
 		</header>
 
 		<main class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-			{#if !$astStore.projectPath && $astStore.root}
+			{#if !astStore.projectPath && astStore.root}
 				<div class="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-4 m-6 mb-0">
 					<div class="flex">
 						<div class="flex-shrink-0">
@@ -62,7 +78,7 @@
 				</div>
 			{/if}
 
-			<TreeView root={$astStore.root} projectPath={$astStore.projectPath} />
+			<TreeView root={astStore.root} projectPath={astStore.projectPath} />
 		</main>
 	</div>
 </div>
