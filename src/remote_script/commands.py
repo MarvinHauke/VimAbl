@@ -30,7 +30,6 @@ class CommandHandlers:
         return {
             "GET_VIEW": self._handle_get_view,           # Direct - no self.song() access
             "GET_STATE": self._handle_get_state,         # Threaded - needs self.song().is_playing
-            "GET_PROJECT_PATH": self._handle_get_project_path,  # Direct - application property
             "EXPORT_XML": self._handle_export_xml,       # Threaded - saves the project as XML (requires project_path param)
             "SCROLL_TO_TOP": self._handle_scroll_to_top,
             "SCROLL_TO_BOTTOM": self._handle_scroll_to_bottom,
@@ -40,7 +39,7 @@ class CommandHandlers:
 
     def get_direct_commands(self):
         """Commands that can execute immediately without thread switching"""
-        return {"GET_VIEW", "GET_PROJECT_PATH"}
+        return {"GET_VIEW"}
 
     def _handle_get_view(self, params=None):
         """Handle GET_VIEW command (fast path - no thread switching)"""
@@ -56,59 +55,6 @@ class CommandHandlers:
         return {
             "view": current
         }
-
-    def _handle_get_project_path(self, params=None):
-        """Handle GET_PROJECT_PATH command"""
-        try:
-            # Try multiple methods to get the project path
-            path = None
-
-            # Method 1: Try application.get_document()
-            try:
-                document = self.application.get_document()
-                if document and hasattr(document, 'path') and document.path:
-                    path = str(document.path)
-                    self.log_message(f"Method 1 (get_document): Found path: {path}")
-            except Exception as e:
-                self.log_message(f"Method 1 (get_document) failed: {str(e)}")
-
-            # Method 2: Try song().canonical_parent
-            if not path:
-                try:
-                    song = self.song()
-                    if hasattr(song, 'canonical_parent') and song.canonical_parent:
-                        canonical = song.canonical_parent
-                        if hasattr(canonical, 'canonical_parent') and canonical.canonical_parent:
-                            path = str(canonical.canonical_parent)
-                            self.log_message(f"Method 2 (canonical_parent): Found path: {path}")
-                except Exception as e:
-                    self.log_message(f"Method 2 (canonical_parent) failed: {str(e)}")
-
-            # Method 3: Check if song has path attribute directly
-            if not path:
-                try:
-                    song = self.song()
-                    if hasattr(song, 'path') and song.path:
-                        path = str(song.path)
-                        self.log_message(f"Method 3 (song.path): Found path: {path}")
-                except Exception as e:
-                    self.log_message(f"Method 3 (song.path) failed: {str(e)}")
-
-            if path:
-                return {
-                    "project_path": path
-                }
-            else:
-                self.log_message("All methods failed - no document or path available")
-                return {
-                    "project_path": None
-                }
-        except Exception as e:
-            self.log_message(f"Failed to get project path: {str(e)}")
-            return {
-                "project_path": None,
-                "error": str(e)
-            }
 
     def _handle_export_xml(self, params=None):
         """Handle EXPORT_XML command - exports project as XML to .vimabl directory
