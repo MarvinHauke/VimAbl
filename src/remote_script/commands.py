@@ -6,7 +6,7 @@ Command handlers for Live API operations
 class CommandHandlers:
     """Handles all commands from Hammerspoon"""
 
-    def __init__(self, song_accessor, application, observers, log_callback):
+    def __init__(self, song_accessor, application, observers, log_callback, udp_observer_manager=None):
         """Initialize command handlers
 
         Args:
@@ -14,11 +14,13 @@ class CommandHandlers:
             application: Live.Application instance
             observers: ViewObservers instance for state access
             log_callback: Function to call for logging (e.g., self.log_message)
+            udp_observer_manager: ObserverManager instance for UDP observers (optional)
         """
         self.song = song_accessor
         self.application = application
         self.observers = observers
         self.log_message = log_callback
+        self.udp_observer_manager = udp_observer_manager
 
     def register_commands(self):
         """Register all command handlers
@@ -27,7 +29,7 @@ class CommandHandlers:
         - Direct: Can execute immediately without thread switching (read-only, no self.song())
         - Threaded: Must execute in main thread (accesses self.song())
         """
-        return {
+        commands = {
             "GET_VIEW": self._handle_get_view,           # Direct - no self.song() access
             "GET_STATE": self._handle_get_state,         # Threaded - needs self.song().is_playing
             "EXPORT_XML": self._handle_export_xml,       # Threaded - saves the project as XML (requires project_path param)
@@ -36,6 +38,17 @@ class CommandHandlers:
             "JUMP_TO_FIRST": self._handle_jump_to_first,  # Smart command - auto-detects view
             "JUMP_TO_LAST": self._handle_jump_to_last,    # Smart command - auto-detects view
         }
+
+        # Add UDP observer commands if available
+        if self.udp_observer_manager:
+            commands.update({
+                "START_OBSERVERS": self._handle_start_observers,     # Start UDP observers
+                "STOP_OBSERVERS": self._handle_stop_observers,       # Stop UDP observers
+                "REFRESH_OBSERVERS": self._handle_refresh_observers, # Refresh UDP observers
+                "GET_OBSERVER_STATUS": self._handle_get_observer_status, # Get observer statistics
+            })
+
+        return commands
 
     def get_direct_commands(self):
         """Commands that can execute immediately without thread switching"""
@@ -191,4 +204,69 @@ class CommandHandlers:
                     return {"success": False, "error": "No scenes"}
         except Exception as e:
             self.log_message(f"Jump to last failed: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_start_observers(self, params=None):
+        """Handle START_OBSERVERS command - start UDP observers"""
+        try:
+            if not self.udp_observer_manager:
+                return {"success": False, "error": "UDP observer manager not initialized"}
+
+            self.udp_observer_manager.start()
+            self.log_message("UDP observers started")
+            return {
+                "success": True,
+                "message": "UDP observers started",
+                "stats": self.udp_observer_manager.get_stats()
+            }
+        except Exception as e:
+            self.log_message(f"Failed to start observers: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_stop_observers(self, params=None):
+        """Handle STOP_OBSERVERS command - stop UDP observers"""
+        try:
+            if not self.udp_observer_manager:
+                return {"success": False, "error": "UDP observer manager not initialized"}
+
+            self.udp_observer_manager.stop()
+            self.log_message("UDP observers stopped")
+            return {
+                "success": True,
+                "message": "UDP observers stopped"
+            }
+        except Exception as e:
+            self.log_message(f"Failed to stop observers: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_refresh_observers(self, params=None):
+        """Handle REFRESH_OBSERVERS command - refresh UDP observers"""
+        try:
+            if not self.udp_observer_manager:
+                return {"success": False, "error": "UDP observer manager not initialized"}
+
+            self.udp_observer_manager.refresh()
+            self.log_message("UDP observers refreshed")
+            return {
+                "success": True,
+                "message": "UDP observers refreshed",
+                "stats": self.udp_observer_manager.get_stats()
+            }
+        except Exception as e:
+            self.log_message(f"Failed to refresh observers: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_get_observer_status(self, params=None):
+        """Handle GET_OBSERVER_STATUS command - get observer statistics"""
+        try:
+            if not self.udp_observer_manager:
+                return {"success": False, "error": "UDP observer manager not initialized"}
+
+            stats = self.udp_observer_manager.get_stats()
+            return {
+                "success": True,
+                "stats": stats
+            }
+        except Exception as e:
+            self.log_message(f"Failed to get observer status: {str(e)}")
             return {"success": False, "error": str(e)}

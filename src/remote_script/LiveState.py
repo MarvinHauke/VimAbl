@@ -5,9 +5,10 @@ Main Remote Script controller that observes Live's state
 import Live
 from _Framework.ControlSurface import ControlSurface
 
-from .observers import ViewObservers
+from .observers import ViewObservers, ObserverManager
 from .commands import CommandHandlers
 from .server import CommandServer
+from .udp_sender import UDPSender
 
 
 class LiveState(ControlSurface):
@@ -18,16 +19,30 @@ class LiveState(ControlSurface):
 
         self.application = Live.Application.get_application()
 
-        # Initialize observers
+        # Initialize view observers
         self.observers = ViewObservers(self.application, self.log_message)
         self.observers.setup()
+
+        # Initialize UDP sender for real-time events
+        self.udp_sender = UDPSender(host="127.0.0.1", port=9002)
+        self.udp_sender.start()
+        self.log_message("UDP sender initialized on 127.0.0.1:9002")
+
+        # Initialize Live API observers (tracks, devices, transport)
+        self.udp_observer_manager = ObserverManager(
+            song=self.song(),
+            udp_sender=self.udp_sender
+        )
+        self.udp_observer_manager.start()
+        self.log_message("UDP observer manager started")
 
         # Initialize command handlers
         self.command_handlers = CommandHandlers(
             song_accessor=self.song,
             application=self.application,
             observers=self.observers,
-            log_callback=self.log_message
+            log_callback=self.log_message,
+            udp_observer_manager=self.udp_observer_manager
         )
 
         # Initialize and start server
@@ -70,7 +85,17 @@ class LiveState(ControlSurface):
         """Called when script is disconnected"""
         self.log_message("Live State Remote Script disconnecting")
 
-        # Remove observers
+        # Stop UDP observer manager
+        if hasattr(self, 'udp_observer_manager'):
+            self.udp_observer_manager.stop()
+            self.log_message("UDP observer manager stopped")
+
+        # Stop UDP sender
+        if hasattr(self, 'udp_sender'):
+            self.udp_sender.stop()
+            self.log_message("UDP sender stopped")
+
+        # Remove view observers
         self.observers.teardown()
 
         super().disconnect()

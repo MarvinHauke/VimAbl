@@ -7,8 +7,12 @@ Vim-like keybindings and LSP-style server functionality for Ableton Live. Contro
 - **Vim-inspired navigation**: `gg`, `G`, `dd`, `za` and more
 - **Context-aware shortcuts**: Different behavior in Arrangement vs Session view
 - **Thread-safe Remote Script**: Exposes Live's state via local socket server (port 9001)
+- **UDP/OSC Real-Time Observers** ⭐ NEW!: Streams Live events with < 10ms latency (port 9002)
+- **Web TreeViewer**: Real-time project visualization via WebSocket (port 8765)
 - **Modular architecture**: Easy to extend with new commands
 - **Auto-recovery**: Monitors and restarts eventtaps automatically
+
+📚 **[Complete Documentation](docs/README.md)** | 🎯 **[Observer Reference](docs/ESTABLISHED_OBSERVERS.md)**
 
 ## Architecture
 
