@@ -126,13 +126,15 @@ async def run_websocket_server(path: Path, host: str, port: int, use_signals: bo
 
             # Broadcast the event to WebSocket clients
             if server.websocket_server and server.websocket_server.is_running():
-                # Create a real-time event message
+                # Create a real-time event message (match TypeScript LiveEventMessage structure)
                 event_message = {
                     'type': 'live_event',
-                    'event_path': event_path,
-                    'args': args,
-                    'seq_num': seq_num,
-                    'timestamp': timestamp
+                    'payload': {
+                        'event_path': event_path,
+                        'args': args,
+                        'seq_num': seq_num,
+                        'timestamp': timestamp
+                    }
                 }
                 await server.websocket_server.broadcaster.broadcast(event_message)
 

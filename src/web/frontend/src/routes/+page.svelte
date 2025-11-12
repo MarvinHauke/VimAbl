@@ -5,7 +5,11 @@
 	import { astStore } from '$lib/stores/ast.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
 	import TreeView from '$lib/components/TreeView.svelte';
-	import type { WebSocketMessage, FullASTMessage } from '$lib/types/ast';
+	import type {
+		WebSocketMessage,
+		FullASTMessage,
+		LiveEventMessage
+	} from '$lib/types/ast';
 
 	let client: ASTWebSocketClient | null = null;
 
@@ -23,7 +27,7 @@
 					astStore.setAST(fullMessage.payload.ast, fullMessage.payload.project_path);
 					console.log('[WebSocket] Loaded full AST');
 				} else if (message.type === 'DIFF_UPDATE') {
-					// Apply incremental diff
+					// Apply incremental diff from XML file save
 					const diffMessage = message as any;
 					if (diffMessage.payload?.diff) {
 						const diff = diffMessage.payload.diff;
@@ -37,8 +41,25 @@
 						console.log('[WebSocket] Diff payload:', diffMessage.payload);
 						astStore.applyDiff(changes);
 					}
+				} else if (message.type === 'live_event') {
+					// Apply real-time UDP event to AST
+					const liveEvent = message as LiveEventMessage;
+					astStore.applyLiveEvent(
+						liveEvent.payload.event_path,
+						liveEvent.payload.args,
+						liveEvent.payload.seq_num
+					);
+					console.log(
+						`[UDP Event #${liveEvent.payload.seq_num}] ${liveEvent.payload.event_path}`,
+						liveEvent.payload.args
+					);
 				} else if (message.type === 'ERROR') {
 					connectionStore.setError(message.payload.error);
+					// Check if this is a gap warning
+					if (message.payload.details?.includes('gap')) {
+						astStore.setStale(true);
+						console.warn('[WebSocket] UDP event gap detected - AST may be stale');
+					}
 				}
 			},
 			onError: (error) => connectionStore.setError(error.message)
