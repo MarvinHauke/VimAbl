@@ -401,35 +401,421 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 
 ---
 
-## Phase 5: Remote Script Integration
+## Phase 5: Remote Script Integration (UDP/OSC Real-Time Observer)
 
-**Priority: MEDIUM**
+**Priority: HIGH** (Changed from MEDIUM - critical for real-time updates)
 **Dependencies: Phase 1, Phase 3**
-**Goal: Stream real-time updates from Ableton Live via Remote Script**
+**Goal: Stream real-time updates from Ableton Live via UDP/OSC protocol**
 
-### Phase 5a: Remote Script Event Observers
+### Architecture Overview
 
-- [ ] Update `src/remote_script/observers.py` - Add AST update observers
-  - [ ] Observer for track name changes
-  - [ ] Observer for device add/remove
-  - [ ] Observer for clip trigger/stop
-  - [ ] Observer for parameter value changes
-  - [ ] Debounce events to avoid spam
-- [ ] Create lightweight event messages
-  - [ ] `track_renamed`: {track_index, new_name}
-  - [ ] `device_added`: {track_index, device_index, device_name}
-  - [ ] `clip_triggered`: {track_index, scene_index}
-  - [ ] `parameter_changed`: {track_index, device_index, param_id, value}
-- [ ] Send events to WebSocket server
-  - [ ] Connect to WebSocket server from Remote Script
-  - [ ] Send events as JSON
-  - [ ] Handle connection failures gracefully
-- [ ] Test event streaming
-  - [ ] Rename track in Live
-  - [ ] Verify event is sent to WebSocket
-  - [ ] Check that Svelte UI updates
+```
+                     (A) .als file watcher
+          ┌────────────────────────────────┐
+          │  Python AST Server (Port 8765) │
+          │  - Maintains AST               │
+          │  - Computes diffs              │
+          │  - WebSocket broadcast to UI   │
+          └──────────┬─────────────────────┘
+                     ▲
+   (D) UDP/OSC ⇡     │  ⇣ WebSocket (to Svelte)
+      Port 9002      │
+                     ▼
+          ┌────────────────────────────────┐
+          │  UDP Listener Bridge           │
+          │  - Receives OSC events         │
+          │  - Deduplicates messages       │
+          │  - Forwards to AST server      │
+          └──────────┬─────────────────────┘
+                     ▲
+   UDP (fire & forget, < 1ms latency)
+                     │
+          ┌──────────┴─────────────────────┐
+          │  Ableton Remote Script         │
+          │  - Live API observers          │
+          │  - Emits OSC/UDP events        │
+          │  - Debounces rapid changes     │
+          └────────────────────────────────┘
+```
 
-### Phase 5b: Bi-Directional Communication (Optional)
+**Port Allocation:**
+- **9001**: Remote Script TCP server (existing - commands)
+- **9002**: UDP listener (new - real-time events)
+- **8765**: WebSocket server (existing - AST to Svelte)
+
+**Why UDP/OSC?**
+- ✅ Very low latency (< 1 ms) - no blocking inside Live
+- ✅ Fire-and-forget - Remote Script never waits
+- ✅ Ableton-friendly pattern (same as Max for Live, TouchOSC)
+- ✅ Easy to debug with OSC monitoring tools
+- ✅ Lightweight - just `socket.sendto()` in Python
+- ⚠️ UDP is unreliable - use XML diff as fallback for guaranteed consistency
+
+**Future Option: ZeroMQ (deferred to Phase 9)**
+- For production/distributed setups
+- PUB/SUB pattern with auto-reconnect
+- Requires `pyzmq` packaging in Remote Script
+- Overkill for current local-only use case
+
+### Phase 5a: UDP/OSC Message Schema Design
+
+**Goal: Define lightweight, OSC-compatible message format**
+
+- [ ] Design OSC message schema (in `docs/OSC_PROTOCOL.md`)
+  - [ ] Track events:
+    - `/live/track/renamed <track_idx> <name>`
+    - `/live/track/added <track_idx> <name> <type>`
+    - `/live/track/deleted <track_idx>`
+    - `/live/track/mute <track_idx> <muted_bool>`
+    - `/live/track/arm <track_idx> <armed_bool>`
+    - `/live/track/volume <track_idx> <volume_float>`
+  - [ ] Device events:
+    - `/live/device/added <track_idx> <device_idx> <name>`
+    - `/live/device/deleted <track_idx> <device_idx>`
+    - `/live/device/param <track_idx> <device_idx> <param_id> <value>`
+  - [ ] Clip events:
+    - `/live/clip/triggered <track_idx> <scene_idx>`
+    - `/live/clip/stopped <track_idx> <scene_idx>`
+    - `/live/clip/added <track_idx> <scene_idx> <name>`
+    - `/live/clip/deleted <track_idx> <scene_idx>`
+  - [ ] Scene events:
+    - `/live/scene/renamed <scene_idx> <name>`
+    - `/live/scene/triggered <scene_idx>`
+  - [ ] Transport events:
+    - `/live/transport/play <is_playing_bool>`
+    - `/live/transport/tempo <bpm_float>`
+    - `/live/transport/position <beats_float>`
+  - [ ] Add sequence numbers for ordering:
+    - `/live/seq <seq_num> <timestamp> <event_path> <args...>`
+  - [ ] Add batching support:
+    - `/live/batch/start <batch_id>`
+    - `/live/batch/end <batch_id>`
+- [ ] Create OSC message builder in `src/remote_script/osc.py`
+  - [ ] `build_osc_message(path, *args)` - Returns bytes
+  - [ ] OSC type tag support: `i` (int), `f` (float), `s` (string), `T/F` (bool)
+  - [ ] Simple OSC encoder (or use `python-osc` if available in Live)
+  - [ ] Add message validation
+- [ ] Document message format with examples
+
+### Phase 5b: UDP Sender in Remote Script
+
+**Goal: Emit UDP/OSC events from Live without blocking**
+
+- [ ] Create `src/remote_script/udp_sender.py`
+  - [ ] Initialize UDP socket with `socket.socket(AF_INET, SOCK_DGRAM)`
+  - [ ] Set non-blocking mode
+  - [ ] Target: `127.0.0.1:9002`
+  - [ ] `send_event(path, *args)` - Build OSC message and `sendto()`
+  - [ ] Add sequence number tracking (increments per message)
+  - [ ] Add timestamp to each message
+  - [ ] Handle socket errors gracefully (log and continue)
+  - [ ] Add `batch_start()` and `batch_end()` for grouping events
+- [ ] Integrate into `LiveState.py`
+  - [ ] Initialize UDP sender on Remote Script startup
+  - [ ] Add `self.udp_sender = UDPSender(host='127.0.0.1', port=9002)`
+  - [ ] Thread-safe access (use existing locks if needed)
+  - [ ] Clean shutdown on disconnect
+- [ ] Add debouncing logic
+  - [ ] Track last send time per event type
+  - [ ] Min interval between similar events (e.g., 50ms for volume)
+  - [ ] Coalesce rapid parameter changes
+  - [ ] Flush queue on idle (500ms timeout)
+- [ ] Test UDP sender
+  - [ ] Start Remote Script in Live
+  - [ ] Use `nc -u -l 9002` to listen for UDP packets
+  - [ ] Verify OSC messages are received
+
+### Phase 5c: Live API Event Observers
+
+**Goal: Register observers for all relevant Live state changes**
+
+- [ ] Create `src/remote_script/observers.py` (or update existing)
+  - [ ] `TrackObserver` class
+    - [ ] Observer for `name` property
+    - [ ] Observer for `mute` property
+    - [ ] Observer for `arm` property
+    - [ ] Observer for `volume` property
+    - [ ] Observer for `devices` list (add/remove)
+  - [ ] `DeviceObserver` class
+    - [ ] Observer for device add/remove in track
+    - [ ] Observer for device parameters (use `add_parameter_value_listener`)
+    - [ ] Track parameter changes with debouncing
+  - [ ] `ClipObserver` class
+    - [ ] Observer for clip trigger/stop
+    - [ ] Observer for clip name changes
+    - [ ] Observer for playing status
+  - [ ] `SceneObserver` class
+    - [ ] Observer for scene name changes
+    - [ ] Observer for scene trigger
+  - [ ] `TransportObserver` class
+    - [ ] Observer for playback state (`is_playing`)
+    - [ ] Observer for tempo changes
+    - [ ] Observer for playhead position (debounce heavily!)
+- [ ] Implement observer lifecycle management
+  - [ ] `register_observers()` - Set up all observers on tracks/devices/clips
+  - [ ] `unregister_observers()` - Clean up on shutdown
+  - [ ] `refresh_observers()` - Re-scan when tracks/devices change
+  - [ ] Use `add_<property>_listener` from Live API
+  - [ ] Store observer callbacks for cleanup
+- [ ] Connect observers to UDP sender
+  - [ ] Each observer callback calls `udp_sender.send_event(...)`
+  - [ ] Use `schedule_message()` for thread safety if needed
+  - [ ] Add try/except around all observer callbacks
+- [ ] Test observers in Live
+  - [ ] Rename a track → verify UDP message sent
+  - [ ] Add a device → verify UDP message sent
+  - [ ] Change parameter → verify UDP message sent
+  - [ ] Monitor with `nc -u -l 9002`
+
+### Phase 5d: UDP Listener Bridge Service
+
+**Goal: Receive UDP/OSC events and forward to WebSocket server**
+
+- [ ] Create `src/udp_listener/` directory
+  - [ ] Create `src/udp_listener/__init__.py`
+  - [ ] Create `src/udp_listener/listener.py` - UDP socket listener
+  - [ ] Create `src/udp_listener/osc_parser.py` - OSC message decoder
+  - [ ] Create `src/udp_listener/bridge.py` - Bridge to WebSocket server
+- [ ] Implement `UDPListener` in `listener.py`
+  - [ ] Create UDP socket: `socket.socket(AF_INET, SOCK_DGRAM)`
+  - [ ] Bind to `0.0.0.0:9002`
+  - [ ] Async receive loop with `asyncio`
+  - [ ] Parse incoming OSC messages
+  - [ ] Handle malformed messages gracefully
+  - [ ] Add logging for debugging
+- [ ] Implement `OSCParser` in `osc_parser.py`
+  - [ ] Parse OSC message format (address pattern + type tags + args)
+  - [ ] Extract event path (e.g., `/live/track/renamed`)
+  - [ ] Extract arguments (int, float, string, bool)
+  - [ ] Return structured event dict: `{path, args, seq_num, timestamp}`
+  - [ ] Validate message format
+- [ ] Implement sequence number deduplication
+  - [ ] Track last received sequence number
+  - [ ] Detect and skip duplicate messages
+  - [ ] Detect and warn on large gaps (potential packet loss)
+  - [ ] Add circular buffer for recent seq numbers (size: 100)
+  - [ ] Log statistics (received, duplicates, gaps)
+- [ ] Implement event bridge to AST server
+  - [ ] Convert OSC events to internal event format
+  - [ ] Forward to AST server's event handler
+  - [ ] Add event queue for buffering (max size: 1000)
+  - [ ] Flush queue periodically or when full
+- [ ] Test UDP listener
+  - [ ] Start listener: `python -m src.udp_listener`
+  - [ ] Send test OSC messages with `oscsend` or Python script
+  - [ ] Verify messages are parsed correctly
+  - [ ] Test deduplication logic
+
+### Phase 5e: Integrate UDP Listener with AST Server
+
+**Goal: Process real-time events and update WebSocket clients**
+
+- [ ] Update `src/server/api.py` - Add event processing
+  - [ ] Start UDP listener as async task
+  - [ ] Add `process_live_event(event)` method
+  - [ ] Map OSC events to AST operations:
+    - Track renamed → update AST node, broadcast diff
+    - Device added → add node to AST, broadcast diff
+    - Clip triggered → update state, broadcast event
+    - Parameter changed → update value, broadcast event (optional)
+  - [ ] Batch multiple events into single diff (wait 50ms)
+  - [ ] Broadcast updates via existing WebSocket server
+- [ ] Implement incremental AST updates (lightweight)
+  - [ ] For renames: update node in-place, recompute hash
+  - [ ] For add/delete: modify tree structure, recompute parent hashes
+  - [ ] For state changes (play/mute): update flags only, no rehash
+  - [ ] Generate minimal diff (only changed nodes)
+- [ ] Add fallback to XML diff
+  - [ ] If UDP events are missed (gaps detected)
+  - [ ] If AST becomes inconsistent (hash mismatch)
+  - [ ] Trigger full XML reload and diff
+  - [ ] Log fallback occurrences
+- [ ] Test integration
+  - [ ] Start AST server with UDP listener
+  - [ ] Open Svelte UI in browser
+  - [ ] Make changes in Live
+  - [ ] Verify real-time updates in UI (<100ms latency)
+  - [ ] Test fallback by simulating packet loss
+
+### Phase 5f: Observer Lifecycle Management
+
+**Goal: Automatically start/stop observers with Ableton**
+
+- [ ] Integrate with Hammerspoon app watcher
+  - [ ] When Ableton launches → Remote Script starts → observers start
+  - [ ] When Ableton quits → observers stop → UDP sender closes
+  - [ ] Add health check: ping UDP listener periodically
+- [ ] Add observer restart on project load
+  - [ ] Detect project change in Remote Script
+  - [ ] Unregister old observers
+  - [ ] Register new observers for new tracks/devices
+  - [ ] Send full state snapshot via UDP (batch)
+- [ ] Add manual control commands
+  - [ ] `START_OBSERVERS` - Enable real-time updates
+  - [ ] `STOP_OBSERVERS` - Disable (save CPU)
+  - [ ] `RESTART_OBSERVERS` - Refresh observer list
+  - [ ] Send via existing TCP command interface (port 9001)
+- [ ] Add observer status reporting
+  - [ ] Track number of active observers
+  - [ ] Track event send rate (events/sec)
+  - [ ] Expose via `GET_OBSERVER_STATUS` command
+  - [ ] Display in Svelte UI (optional)
+- [ ] Test lifecycle
+  - [ ] Open project → verify observers register
+  - [ ] Close project → verify observers unregister
+  - [ ] Switch projects → verify observers refresh
+  - [ ] Monitor CPU usage (should be negligible)
+
+### Phase 5g: OSC Debugging Tools
+
+**Goal: Make it easy to monitor and debug UDP/OSC traffic**
+
+- [ ] Create `tools/osc_monitor.py` - UDP packet sniffer
+  - [ ] Listen on port 9002
+  - [ ] Decode and pretty-print OSC messages
+  - [ ] Show sequence numbers and timestamps
+  - [ ] Highlight duplicates and gaps
+  - [ ] Add color-coded output (green=ok, yellow=dup, red=gap)
+  - [ ] Usage: `python tools/osc_monitor.py`
+- [ ] Create `tools/osc_send.py` - Test event sender
+  - [ ] Send test OSC messages to port 9002
+  - [ ] Examples: `python tools/osc_send.py /live/track/renamed 0 "New Track"`
+  - [ ] Support all message types
+  - [ ] Add sequence number tracking
+- [ ] Add logging to Remote Script
+  - [ ] Log sent events (debug level)
+  - [ ] Log observer registration/unregistration
+  - [ ] Log debouncing actions
+  - [ ] Write to Ableton's log file
+- [ ] Document OSC protocol
+  - [ ] Create `docs/OSC_PROTOCOL.md`
+  - [ ] List all message types with examples
+  - [ ] Explain sequence numbering
+  - [ ] Provide debugging tips
+  - [ ] Include Wireshark filters for UDP capture
+
+### Phase 5h: Testing & Validation
+
+**Goal: Ensure reliable real-time updates**
+
+- [ ] Unit tests for UDP sender
+  - [ ] Test OSC message encoding
+  - [ ] Test sequence number generation
+  - [ ] Test debouncing logic
+  - [ ] Mock socket for testing
+- [ ] Unit tests for UDP listener
+  - [ ] Test OSC message parsing
+  - [ ] Test deduplication logic
+  - [ ] Test gap detection
+  - [ ] Test malformed message handling
+- [ ] Integration tests
+  - [ ] Start Remote Script, UDP listener, WebSocket server
+  - [ ] Send test events via Remote Script
+  - [ ] Verify events reach Svelte UI
+  - [ ] Measure end-to-end latency (<100ms target)
+- [ ] Stress tests
+  - [ ] Send 1000 events rapidly
+  - [ ] Verify no dropped events (within UDP limits)
+  - [ ] Check CPU usage (<5% on modern Mac)
+  - [ ] Test with large project (50+ tracks, 200+ devices)
+- [ ] Reliability tests
+  - [ ] Simulate packet loss (use `tc` or similar)
+  - [ ] Verify fallback to XML diff works
+  - [ ] Test reconnection scenarios
+  - [ ] Test observer refresh on project change
+- [ ] Manual testing checklist
+  - [ ] Rename tracks → UI updates in real-time
+  - [ ] Add/remove devices → UI updates instantly
+  - [ ] Trigger clips → UI shows playback state
+  - [ ] Change parameters → UI updates (if implemented)
+  - [ ] Save project → XML diff confirms consistency
+  - [ ] Switch projects → observers refresh correctly
+
+---
+
+## Phase 9: ZeroMQ Integration (Future/Optional)
+
+**Priority: LOW**
+**Dependencies: Phase 5 complete and stable**
+**Goal: Replace UDP with ZeroMQ for production-grade reliability**
+
+**Why defer this?**
+- UDP/OSC is simpler to implement and debug
+- For local-only use case, UDP packet loss is negligible
+- ZeroMQ requires additional dependencies in Remote Script
+- Can migrate later if reliability becomes an issue
+
+### Architecture with ZeroMQ
+
+```
+          ┌────────────────────────────────┐
+          │  Python AST Server             │
+          │  - ZMQ SUB socket (receives)   │
+          │  - WebSocket server (broadcasts)│
+          └──────────┬─────────────────────┘
+                     ▲
+   ZMQ PUB/SUB ⇡     │  (automatic reconnect,
+      Port 9002      │   message queuing)
+                     │
+          ┌──────────┴─────────────────────┐
+          │  Ableton Remote Script         │
+          │  - ZMQ PUB socket (publishes)  │
+          │  - Live API observers          │
+          │  - No sequence numbers needed! │
+          └────────────────────────────────┘
+```
+
+### Phase 9a: ZeroMQ Setup
+
+- [ ] Package `pyzmq` for Ableton's Python environment
+  - [ ] Test if `pyzmq` can be imported in Remote Script
+  - [ ] If not, bundle wheel file with Remote Script
+  - [ ] Add fallback to UDP if ZMQ unavailable
+- [ ] Create `src/remote_script/zmq_publisher.py`
+  - [ ] Initialize ZMQ PUB socket: `zmq.Context().socket(zmq.PUB)`
+  - [ ] Bind to `tcp://127.0.0.1:9002`
+  - [ ] Publish events with topics (e.g., `b"track.renamed"`)
+  - [ ] Use JSON encoding for message payload
+- [ ] Create `src/zmq_subscriber/` directory
+  - [ ] ZMQ SUB socket listening on `tcp://127.0.0.1:9002`
+  - [ ] Subscribe to all topics (or filter by prefix)
+  - [ ] Forward to AST server's event handler
+
+### Phase 9b: Migration from UDP to ZMQ
+
+- [ ] Implement dual-mode support (UDP + ZMQ)
+  - [ ] Remote Script tries ZMQ first, falls back to UDP
+  - [ ] AST server listens on both protocols
+  - [ ] Add configuration flag: `USE_ZMQ=true/false`
+- [ ] Test migration
+  - [ ] Verify ZMQ has same functionality as UDP
+  - [ ] Compare latency (should be similar, <5ms)
+  - [ ] Test automatic reconnection
+  - [ ] Test message queuing during disconnect
+- [ ] Remove UDP code (optional)
+  - [ ] If ZMQ is stable, deprecate UDP path
+  - [ ] Keep UDP as fallback for compatibility
+
+### Phase 9c: Advanced ZMQ Features
+
+- [ ] Implement heartbeat mechanism
+  - [ ] Remote Script sends periodic heartbeat
+  - [ ] AST server detects connection loss
+  - [ ] Auto-reconnect on both sides
+- [ ] Add multiple subscribers
+  - [ ] LSP server subscribes to same ZMQ feed
+  - [ ] CLI tools can monitor events
+  - [ ] Multiple UI clients can connect
+- [ ] Add REQ/REP for bi-directional commands
+  - [ ] PUB/SUB for events (one-way)
+  - [ ] REQ/REP for commands (request/response)
+  - [ ] Unified communication layer
+
+---
+
+### Phase 5i: Bi-Directional Communication (Optional - After UDP/OSC stable)
+
+**Note: This can be implemented with UDP or ZMQ**
 
 - [ ] Implement commands from WebSocket to Remote Script
   - [ ] `select_track(index)` - Select track in Live

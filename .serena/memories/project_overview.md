@@ -40,20 +40,34 @@ Ableton Live LSP provides Vim-like keybindings and LSP-style server functionalit
 │ Remote Script   │  Python script running inside Live
 │ (LiveState.py)  │  Thread-safe API via schedule_message()
 │                 │  XML extraction from .als files
+│                 │  UDP sender for real-time events (Port 9002)
 └────────┬────────┘
          │ Live API
          ↓
 ┌─────────────────┐
 │ Ableton Live    │  Tracks, scenes, views, etc.
-└─────────────────┘
+│                 │  Live API observers for changes
+└────────┬────────┘
          │
-         ↓ .als file save (gzipped XML)
-┌─────────────────┐
-│ WebSocket       │  AST server (port 8765)
-│ Server          │  Real-time project tree viewer
-│ (uv/Python)     │  Parses XML into structured AST
-└─────────────────┘
+         ├─ .als file save (gzipped XML) ─────────┐
+         │                                         ↓
+         └─ UDP/OSC events ────────┐   ┌──────────────────┐
+                                   ↓   │ WebSocket Server │
+                        ┌──────────────┤ (Port 8765)      │
+                        │ UDP Listener │ Real-time AST    │
+                        │ (Port 9002)  │ streaming to UI  │
+                        │ Deduplicates │ Parses XML       │
+                        │ Forwards to  │ Computes diffs   │
+                        │ AST Server   │ Broadcasts       │
+                        └──────────────┴──────────────────┘
+                                   ↓
+                        ┌──────────────────┐
+                        │ Svelte TreeViewer│
+                        │ Real-time UI     │
+                        │ Visual diffs     │
+                        └──────────────────┘
 ```
+
 
 ## Communication Protocol
 
@@ -67,6 +81,20 @@ Ableton Live LSP provides Vim-like keybindings and LSP-style server functionalit
   - `GET_STATE` - Get current view and playback state
   - `EXPORT_XML:/path/to/project.als` - Extract XML from .als file
   - `JUMP_TO_FIRST` - Navigate to first track/scene
+
+### UDP/OSC Real-Time Observer (Port 9002) - NEW!
+- UDP packets with OSC schema for real-time events from Live
+- **Ultra-low latency**: < 1ms, fire-and-forget
+- Non-blocking - Remote Script never waits
+- Events wrapped with sequence numbers for ordering and deduplication
+- Debouncing for rapid parameter changes (50ms min interval)
+- Located at: `src/remote_script/udp_sender.py` and `src/udp_listener/`
+- Protocol documented in: `docs/OSC_PROTOCOL.md`
+- Example events:
+  - `/live/track/renamed <track_idx> <name>`
+  - `/live/device/added <track_idx> <device_idx> <name>`
+  - `/live/clip/triggered <track_idx> <scene_idx>`
+- Fallback to XML diff if UDP packets are lost (gap > 10 messages)
 
 ### WebSocket Server (Port 8765)
 - Started automatically when .als file is saved
