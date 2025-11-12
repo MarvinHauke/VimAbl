@@ -116,6 +116,7 @@ function M.start(projectPath)
 			M.xmlPath,
 			"--mode=websocket",
 			"--ws-port=" .. M.port,
+			"--no-signals",
 		}
 	)
 

@@ -8,7 +8,7 @@ from src.parser import load_ableton_xml, build_ast
 from src.server import ASTServer
 
 
-async def run_websocket_server(path: Path, host: str, port: int):
+async def run_websocket_server(path: Path, host: str, port: int, use_signals: bool = True):
     """Run the WebSocket server with file watching."""
     print(f"Starting WebSocket server on ws://{host}:{port}")
     print(f"Loading project: {path}")
@@ -39,22 +39,32 @@ async def run_websocket_server(path: Path, host: str, port: int):
     print(f"  URL: ws://{ws_status['host']}:{ws_status['port']}")
     print(f"  Connected clients: {ws_status['clients']}")
 
-    print("\nServer is running. Press Ctrl+C to stop.")
+    if use_signals:
+        print("\nServer is running. Press Ctrl+C to stop.")
 
-    # Set up graceful shutdown
-    stop_event = asyncio.Event()
+        # Set up graceful shutdown with signal handlers
+        stop_event = asyncio.Event()
 
-    def signal_handler():
-        print("\nShutting down...")
-        stop_event.set()
+        def signal_handler():
+            print("\nShutting down...")
+            stop_event.set()
 
-    # Register signal handlers
-    loop = asyncio.get_event_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, signal_handler)
+        # Register signal handlers
+        loop = asyncio.get_event_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, signal_handler)
 
-    # Wait for stop signal
-    await stop_event.wait()
+        # Wait for stop signal
+        await stop_event.wait()
+    else:
+        print("\nServer is running. Use websocket_manager.lua to stop.")
+
+        # Keep server alive with infinite sleep (for hs.task)
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            print("\nShutting down...")
 
     # Clean shutdown
     await server.stop_websocket_server()
@@ -72,12 +82,14 @@ def main():
         print("\nWebSocket Options:")
         print("  --ws-host=HOST    - WebSocket host (default: localhost)")
         print("  --ws-port=PORT    - WebSocket port (default: 8765)")
+        print("  --no-signals      - Disable signal handlers (for hs.task)")
         sys.exit(1)
 
     path = Path(sys.argv[1])
     mode = "legacy"
     ws_host = "localhost"
     ws_port = 8765
+    use_signals = True
 
     # Parse optional arguments
     if len(sys.argv) > 2:
@@ -88,11 +100,13 @@ def main():
                 ws_host = arg.split("=")[1]
             elif arg.startswith("--ws-port="):
                 ws_port = int(arg.split("=")[1])
+            elif arg == "--no-signals":
+                use_signals = False
 
     if mode == "websocket":
         # Run WebSocket server
         try:
-            asyncio.run(run_websocket_server(path, ws_host, ws_port))
+            asyncio.run(run_websocket_server(path, ws_host, ws_port, use_signals))
         except KeyboardInterrupt:
             print("\nShutdown complete.")
     elif mode == "server" or mode == "info":

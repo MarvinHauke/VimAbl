@@ -114,61 +114,23 @@ class CommandHandlers:
         """Handle EXPORT_XML command - exports project as XML to .vimabl directory
 
         Args:
-            params: list with optional project path as first element (colon-delimited format).
-                    If provided, uses that path directly.
-                    If not provided, attempts to detect the path from the Live API.
+            params: list with project path as first element (colon-delimited format: EXPORT_XML:path).
+                    Project path is always provided by hs.pathwatcher from Hammerspoon.
         """
         try:
             import os
+            import gzip
 
-            # Check if project_path was provided as a parameter (colon-delimited format: EXPORT_XML:path)
-            project_path = None
-            if params and isinstance(params, list) and len(params) > 0:
-                project_path = params[0]
-                self.log_message(f"Export: Using provided project path: {project_path}")
-
-            # If no path provided, try multiple methods to detect it
-            if not project_path:
-                self.log_message("Export: No project path provided, attempting auto-detection...")
-
-                # Method 1: Try application.get_document()
-                try:
-                    document = self.application.get_document()
-                    if document and hasattr(document, 'path') and document.path:
-                        project_path = str(document.path)
-                        self.log_message(f"Export: Method 1 (get_document) found path: {project_path}")
-                except Exception as e:
-                    self.log_message(f"Export: Method 1 (get_document) failed: {str(e)}")
-
-                # Method 2: Try song().canonical_parent
-                if not project_path:
-                    try:
-                        song = self.song()
-                        if hasattr(song, 'canonical_parent') and song.canonical_parent:
-                            canonical = song.canonical_parent
-                            if hasattr(canonical, 'canonical_parent') and canonical.canonical_parent:
-                                project_path = str(canonical.canonical_parent)
-                                self.log_message(f"Export: Method 2 (canonical_parent) found path: {project_path}")
-                    except Exception as e:
-                        self.log_message(f"Export: Method 2 (canonical_parent) failed: {str(e)}")
-
-                # Method 3: Check if song has path attribute directly
-                if not project_path:
-                    try:
-                        song = self.song()
-                        if hasattr(song, 'path') and song.path:
-                            project_path = str(song.path)
-                            self.log_message(f"Export: Method 3 (song.path) found path: {project_path}")
-                    except Exception as e:
-                        self.log_message(f"Export: Method 3 (song.path) failed: {str(e)}")
-
-            # If no path found, return error
-            if not project_path:
-                self.log_message("Cannot export XML: project not saved or path not available")
+            # Project path must be provided by Hammerspoon
+            if not params or not isinstance(params, list) or len(params) == 0:
+                self.log_message("Export: ERROR - No project path provided")
                 return {
                     "success": False,
-                    "error": "Project must be saved before exporting XML"
+                    "error": "Project path is required (provided by Hammerspoon)"
                 }
+
+            project_path = params[0]
+            self.log_message(f"Export: Using project path from Hammerspoon: {project_path}")
 
             # Extract project directory and name
             project_dir = os.path.dirname(project_path)
@@ -181,8 +143,6 @@ class CommandHandlers:
                 self.log_message(f"Created .vimabl directory: {vimabl_dir}")
 
             # Extract XML from .als file (which is gzipped XML)
-            # .als files are just gzipped XML, so we decompress them
-            import gzip
             xml_path = os.path.join(vimabl_dir, f"{project_name}.xml")
 
             with gzip.open(project_path, 'rb') as f_in:
