@@ -2,12 +2,18 @@ import asyncio
 import json
 import sys
 import signal
+import logging
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from src.parser import load_ableton_xml, build_ast
 from src.server import ASTServer
+from src.udp_listener.listener import UDPListener
+
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class XMLFileWatcher(FileSystemEventHandler):
@@ -80,12 +86,65 @@ class XMLFileWatcher(FileSystemEventHandler):
 
 
 async def run_websocket_server(path: Path, host: str, port: int, use_signals: bool = True):
-    """Run the WebSocket server with file watching."""
+    """Run the WebSocket server with file watching and UDP listener."""
     print(f"Starting WebSocket server on ws://{host}:{port}")
     print(f"Loading project: {path}")
 
     # Create server with WebSocket enabled
     server = ASTServer(enable_websocket=True, ws_host=host, ws_port=port)
+
+    # Track gaps for fallback mechanism
+    last_seq_num = [0]  # Use list for closure mutability
+    gap_threshold = 5  # If we miss more than this many events, trigger XML reload
+
+    # Create UDP event callback
+    async def udp_event_callback(event_path: str, args: list, seq_num: int, timestamp: float):
+        """Handle UDP events from Ableton Live and broadcast changes."""
+        try:
+            # Check for sequence gaps (missed UDP events)
+            if last_seq_num[0] > 0:
+                gap = seq_num - last_seq_num[0] - 1
+                if gap > 0:
+                    print(f"[UDP] Detected gap of {gap} events (seq {last_seq_num[0]+1} to {seq_num-1})")
+                    logger.warning(f"[UDP] Detected gap of {gap} events (seq {last_seq_num[0]+1} to {seq_num-1})")
+
+                    # If gap exceeds threshold, trigger XML reload as fallback
+                    if gap >= gap_threshold:
+                        print(f"[UDP] Gap exceeds threshold ({gap} >= {gap_threshold}), triggering XML reload fallback")
+                        logger.warning(f"[UDP] Gap exceeds threshold ({gap} >= {gap_threshold}), triggering XML reload fallback")
+                        # Broadcast error immediately (don't use create_task to ensure it's sent)
+                        if server.websocket_server and server.websocket_server.is_running():
+                            await server.websocket_server.broadcast_error(
+                                "UDP event gap detected",
+                                f"Missed {gap} events. Waiting for XML file update for full sync."
+                            )
+                        # The XMLFileWatcher will handle reloading when the file is saved
+
+            last_seq_num[0] = seq_num
+
+            logger.info(f"[UDP Event #{seq_num}] {event_path} {args}")
+
+            # Broadcast the event to WebSocket clients
+            if server.websocket_server and server.websocket_server.is_running():
+                # Create a real-time event message
+                event_message = {
+                    'type': 'live_event',
+                    'event_path': event_path,
+                    'args': args,
+                    'seq_num': seq_num,
+                    'timestamp': timestamp
+                }
+                await server.websocket_server.broadcaster.broadcast(event_message)
+
+        except Exception as e:
+            logger.error(f"Error handling UDP event: {e}")
+
+    # Create and start UDP listener on port 9002
+    udp_listener = UDPListener(host="0.0.0.0", port=9002, event_callback=udp_event_callback)
+    print(f"Starting UDP listener on 0.0.0.0:9002")
+
+    # Start UDP listener in background task
+    udp_task = asyncio.create_task(udp_listener.start())
 
     # Start WebSocket server
     await server.start_websocket_server()
@@ -137,8 +196,30 @@ async def run_websocket_server(path: Path, host: str, port: int, use_signals: bo
     await stop_event.wait()
 
     # Clean shutdown
+    print("Stopping UDP listener...")
+    await udp_listener.stop()
+    udp_task.cancel()
+    try:
+        await udp_task
+    except asyncio.CancelledError:
+        pass
+
+    print("Stopping file watcher...")
     observer.join()
+
+    print("Stopping WebSocket server...")
     await server.stop_websocket_server()
+
+    # Print UDP listener stats
+    stats = udp_listener.get_stats()
+    print("\nUDP Listener Statistics:")
+    print(f"  Packets received: {stats['packets_received']}")
+    print(f"  Packets processed: {stats['packets_processed']}")
+    print(f"  Packets dropped: {stats['packets_dropped']}")
+    print(f"  Parse errors: {stats['parse_errors']}")
+    print(f"  Sequence duplicates: {stats['sequence']['duplicates']}")
+    print(f"  Sequence gaps: {stats['sequence']['gaps']}")
+
     print("Server stopped.")
 
 

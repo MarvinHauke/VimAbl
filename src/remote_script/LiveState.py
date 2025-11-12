@@ -81,6 +81,17 @@ class LiveState(ControlSurface):
         except Exception as e:
             self.log_message(f"Error in document path listener: {str(e)}")
 
+    def update_display(self):
+        """
+        Called periodically by Ableton Live's main loop (~60Hz).
+        Used to check for trailing edge events that need to be sent.
+        """
+        super(LiveState, self).update_display()
+
+        # Check for trailing edge debounce events
+        if hasattr(self, 'udp_observer_manager'):
+            self.udp_observer_manager.update()
+
     def disconnect(self):
         """Called when script is disconnected"""
         self.log_message("Live State Remote Script disconnecting")

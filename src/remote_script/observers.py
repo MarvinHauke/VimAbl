@@ -139,18 +139,103 @@ class ViewObservers:
 
 class Debouncer:
     """
-    Debounces rapid events by enforcing a minimum time interval between sends.
+    Debounces rapid events with "trailing edge" guarantee.
 
-    Used for high-frequency events like volume faders and device parameters.
+    Features:
+    - Leading edge: Sends events at intervals during continuous changes (50-100ms)
+    - Trailing edge: Always sends final value after user stops (150ms of silence)
+
+    This ensures:
+    - Smooth updates during fader movement (no flooding)
+    - Final value is ALWAYS sent, even if user stops between intervals
+
+    Example:
+        User moves tempo fader: 91 -> 104 -> 106 -> 94 -> stops at 80 BPM
+        - Leading edge sends: 91, 106 (at 50ms intervals during movement)
+        - Trailing edge sends: 80 (150ms after user stops)
+        Result: Final tempo is correct!
     """
 
     def __init__(self):
         """Initialize debouncer with empty state."""
-        self.last_send_time = {}  # event_key -> timestamp
+        self.last_send_time = {}      # event_key -> timestamp of last send
+        self.pending_values = {}      # event_key -> (value, callback, timestamp)
+        self.trailing_timers = {}     # event_key -> scheduled trigger time
 
-    def should_send(self, event_key: str, min_interval_ms: float) -> bool:
+    def trigger(self, event_key, value, callback,
+                min_interval_ms=50,
+                trailing_ms=150):
         """
-        Check if enough time has passed since last send.
+        Trigger a debounced event with trailing edge guarantee.
+
+        Args:
+            event_key: Unique key for this event (e.g., "track.volume:0")
+            value: The current value to potentially send
+            callback: Function to call when sending: callback(value)
+            min_interval_ms: Minimum interval between sends (leading edge)
+            trailing_ms: Time to wait after last change before sending final value
+        """
+        now = time.time()
+
+        # Store this as the potentially final value
+        self.pending_values[event_key] = (value, callback, now)
+
+        # Leading edge: Send immediately if enough time passed
+        last_send = self.last_send_time.get(event_key, 0)
+        if (now - last_send) * 1000 >= min_interval_ms:
+            callback(value)
+            self.last_send_time[event_key] = now
+            # Clear pending since we just sent it
+            if event_key in self.pending_values:
+                del self.pending_values[event_key]
+
+        # Schedule trailing edge: Send final value after silence
+        self.trailing_timers[event_key] = now + (trailing_ms / 1000.0)
+
+    def check_trailing_edge(self):
+        """
+        Check and send any pending trailing edge values.
+
+        Should be called periodically (e.g., every 50-100ms) by the observer manager.
+        This is typically called from the RemoteScript's update_display() method.
+        """
+        # Early exit if no pending timers (performance optimization)
+        if not self.trailing_timers:
+            return
+
+        now = time.time()
+        keys_to_remove = []
+
+        for event_key, trigger_time in list(self.trailing_timers.items()):
+            if now >= trigger_time:
+                # Time to send the trailing edge!
+                if event_key in self.pending_values:
+                    value, callback, pending_time = self.pending_values[event_key]
+
+                    # Only send if this is still the latest value
+                    # (check that no newer value was triggered)
+                    if pending_time + (150 / 1000.0) <= now:
+                        try:
+                            callback(value)
+                            self.last_send_time[event_key] = now
+                        except Exception as e:
+                            print("[Debouncer] Error sending trailing edge: " + str(e))
+
+                        if event_key in self.pending_values:
+                            del self.pending_values[event_key]
+
+                keys_to_remove.append(event_key)
+
+        # Clean up processed timers
+        for key in keys_to_remove:
+            del self.trailing_timers[key]
+
+    def should_send(self, event_key, min_interval_ms):
+        """
+        Legacy method for backward compatibility.
+
+        WARNING: This method does NOT provide trailing edge guarantee.
+        Consider migrating to trigger() for continuous parameters.
 
         Args:
             event_key: Unique key for this event type (e.g., "track.volume:0")
@@ -284,15 +369,20 @@ class TrackObserver:
             self.log(f"Error handling arm change: {e}")
 
     def _on_volume_changed(self):
-        """Called when track volume changes (debounced)."""
+        """Called when track volume changes (debounced with trailing edge)."""
         try:
-            event_key = f"track.volume:{self.track_index}"
-            if self.debouncer.should_send(event_key, min_interval_ms=50):
-                volume = float(self.track.mixer_device.volume.value)
-                self.sender.send_event("/live/track/volume", self.track_index, volume)
-                # Don't log every volume change (too noisy)
+            volume = float(self.track.mixer_device.volume.value)
+            event_key = "track.volume:" + str(self.track_index)
+
+            # Use new trigger() method for trailing edge guarantee
+            def send_volume(vol):
+                self.sender.send_event("/live/track/volume", self.track_index, vol)
+
+            self.debouncer.trigger(event_key, volume, send_volume,
+                                  min_interval_ms=50, trailing_ms=150)
+            # Don't log every volume change (too noisy)
         except Exception as e:
-            self.log(f"Error handling volume change: {e}")
+            self.log("Error handling volume change: " + str(e))
 
     def _on_devices_changed(self):
         """Called when devices are added/removed from track."""
@@ -376,20 +466,25 @@ class DeviceObserver:
         except Exception as e:
             self.log(f"Error setting up device observer: {e}")
 
-    def _on_param_changed(self, param, param_idx: int):
-        """Called when device parameter changes (debounced)."""
+    def _on_param_changed(self, param, param_idx):
+        """Called when device parameter changes (debounced with trailing edge)."""
         try:
-            event_key = f"device.param:{self.track_index}:{self.device_index}:{param_idx}"
-            if self.debouncer.should_send(event_key, min_interval_ms=50):
-                value = float(param.value)
+            value = float(param.value)
+            event_key = "device.param:" + str(self.track_index) + ":" + str(self.device_index) + ":" + str(param_idx)
+
+            # Use new trigger() method for trailing edge guarantee
+            def send_param(val):
                 self.sender.send_event("/live/device/param",
                                       self.track_index,
                                       self.device_index,
                                       param_idx,
-                                      value)
-                # Don't log every param change (too noisy)
+                                      val)
+
+            self.debouncer.trigger(event_key, value, send_param,
+                                  min_interval_ms=50, trailing_ms=150)
+            # Don't log every param change (too noisy)
         except Exception as e:
-            self.log(f"Error handling param change: {e}")
+            self.log("Error handling param change: " + str(e))
 
     def unregister(self):
         """Unregister all listeners."""
@@ -447,15 +542,20 @@ class TransportObserver:
             self.log(f"Error handling play change: {e}")
 
     def _on_tempo_changed(self):
-        """Called when tempo changes (debounced)."""
+        """Called when tempo changes (debounced with trailing edge)."""
         try:
+            tempo = float(self.song.tempo)
             event_key = "transport.tempo"
-            if self.debouncer.should_send(event_key, min_interval_ms=100):
-                tempo = float(self.song.tempo)
-                self.sender.send_event("/live/transport/tempo", tempo)
-                self.log(f"Transport tempo: {tempo}")
+
+            # Use new trigger() method for trailing edge guarantee
+            def send_tempo(tmp):
+                self.sender.send_event("/live/transport/tempo", tmp)
+                self.log("Transport tempo: " + str(tmp))
+
+            self.debouncer.trigger(event_key, tempo, send_tempo,
+                                  min_interval_ms=100, trailing_ms=150)
         except Exception as e:
-            self.log(f"Error handling tempo change: {e}")
+            self.log("Error handling tempo change: " + str(e))
 
     def unregister(self):
         """Unregister all listeners."""
@@ -562,7 +662,17 @@ class ObserverManager:
         self.log("Tracks list changed")
         self.refresh()
 
-    def get_stats(self) -> dict:
+    def update(self):
+        """
+        Update method - should be called periodically (e.g., from update_display()).
+
+        Checks for trailing edge events that need to be sent.
+        This ensures final values are always sent after user stops changing parameters.
+        """
+        if self.enabled:
+            self.debouncer.check_trailing_edge()
+
+    def get_stats(self):
         """Get observer statistics."""
         return {
             "enabled": self.enabled,
@@ -570,6 +680,6 @@ class ObserverManager:
             "has_transport": self.transport_observer is not None
         }
 
-    def log(self, message: str):
+    def log(self, message):
         """Log message."""
-        print(f"[ObserverManager] {message}")
+        print("[ObserverManager] " + str(message))
