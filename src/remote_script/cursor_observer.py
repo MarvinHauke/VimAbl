@@ -46,12 +46,14 @@ class SessionCursorObserver:
 
         # Cached state - updated by listeners (O(1))
         self._selected_track_idx = None
+        self._selected_track = None  # Cache track object for color/name
         self._selected_scene_idx = None
         self._last_highlighted_slot = None  # (track_idx, scene_idx)
 
         # Flags for change detection (avoid redundant sends)
         self._track_changed = False
         self._scene_changed = False
+        self._color_changed = False  # Flag for color changes
 
         # Track/scene list caches (rebuilt on track/scene add/remove)
         self._tracks_list = None
@@ -101,6 +103,10 @@ class SessionCursorObserver:
     def _remove_listeners(self):
         """Remove all observers - call on cleanup."""
         try:
+            # Remove color listener from selected track
+            if self._selected_track and self._selected_track.color_has_listener(self._on_track_color_changed):
+                self._selected_track.remove_color_listener(self._on_track_color_changed)
+            
             if self.view.selected_track_has_listener(self._on_track_changed):
                 self.view.remove_selected_track_listener(self._on_track_changed)
 
@@ -125,19 +131,30 @@ class SessionCursorObserver:
         """
         Track selection changed - called by Live API.
 
-        Performance: O(1) - just set flag and cache index
-        NO heavy operations - deferred to update()
+        Performance: O(1) - just set flag and cache track reference
+        Also adds color listener to the newly selected track.
         """
         try:
+            # Remove color listener from old track
+            if self._selected_track and self._selected_track.color_has_listener(self._on_track_color_changed):
+                self._selected_track.remove_color_listener(self._on_track_color_changed)
+            
             track = self.view.selected_track
             if track and self._tracks_list:
                 # O(1) index lookup (list.index is optimized in CPython)
                 self._selected_track_idx = self._tracks_list.index(track)
+                self._selected_track = track  # Cache track object for color/name access
                 self._track_changed = True
+                
+                # Add color listener to new track
+                if not track.color_has_listener(self._on_track_color_changed):
+                    track.add_color_listener(self._on_track_color_changed)
+                    
         except (ValueError, AttributeError) as e:
             # Track not in list (edge case: track was just deleted)
             self.log(f"[CursorObserver] Track index lookup failed: {e}")
             self._selected_track_idx = None
+            self._selected_track = None
 
     def _on_scene_changed(self):
         """
@@ -167,6 +184,14 @@ class SessionCursorObserver:
         self._rebuild_caches()
         self._on_scene_changed()
 
+    def _on_track_color_changed(self):
+        """
+        Selected track's color changed - called by Live API.
+
+        Performance: O(1) - just set flag
+        """
+        self._color_changed = True
+
     # =========================================================================
     # update() - Called from LiveState.update_display() at ~60Hz
     # =========================================================================
@@ -177,8 +202,9 @@ class SessionCursorObserver:
 
         Handles:
         1. Sends pending track/scene selection changes
-        2. Polls highlighted_clip_slot (no listener available!)
-        3. Sends clip slot state if changed
+        2. Sends track color changes
+        3. Polls highlighted_clip_slot (no listener available!)
+        4. Sends clip slot state if changed
 
         Performance: O(1) - all operations are simple comparisons
         """
@@ -186,6 +212,11 @@ class SessionCursorObserver:
         if self._track_changed and self._selected_track_idx is not None:
             self._send_track_selection()
             self._track_changed = False
+
+        # Send pending track color change (when user changes color in Live)
+        if self._color_changed and self._selected_track_idx is not None:
+            self._send_track_color_update()
+            self._color_changed = False
 
         # Send pending scene selection change
         if self._scene_changed and self._selected_scene_idx is not None:
@@ -263,14 +294,73 @@ class SessionCursorObserver:
         """
         Send track selection event via UDP.
 
-        Event: /live/cursor/track <track_idx>
+        Event: /live/cursor/track <track_idx> <color_rgb> <track_name>
+        
+        Sends actual RGB color from track.color (not color_index) so the
+        WebUI displays the exact color from Ableton, not a hardcoded palette.
+        
         Performance: Non-blocking UDP send, <0.5ms
         """
         try:
-            self.sender.send_event("/live/cursor/track", self._selected_track_idx)
-            self.log(f"[CursorObserver] Track selected: {self._selected_track_idx}")
+            track_idx = self._selected_track_idx
+            
+            # Get actual RGB color from Live API (format: 0xRRGGBB)
+            color_rgb = None
+            track_name = None
+            
+            if self._selected_track:
+                # track.color returns actual RGB value used by Ableton
+                # This is more accurate than using color_index with a palette
+                try:
+                    color_rgb = int(self._selected_track.color)
+                except (AttributeError, ValueError):
+                    color_rgb = None
+                
+                # Get track name
+                try:
+                    track_name = str(self._selected_track.name)
+                except AttributeError:
+                    track_name = None
+            
+            # Send with color and name
+            if color_rgb is not None and track_name is not None:
+                self.sender.send_event("/live/cursor/track", track_idx, color_rgb, track_name)
+                self.log(f"[CursorObserver] Track selected: {track_idx} '{track_name}' (0x{color_rgb:06X})")
+            elif color_rgb is not None:
+                self.sender.send_event("/live/cursor/track", track_idx, color_rgb)
+                self.log(f"[CursorObserver] Track selected: {track_idx} (0x{color_rgb:06X})")
+            else:
+                self.sender.send_event("/live/cursor/track", track_idx)
+                self.log(f"[CursorObserver] Track selected: {track_idx}")
+                
         except Exception as e:
             self.log(f"[CursorObserver] Error sending track selection: {e}")
+
+    def _send_track_color_update(self):
+        """
+        Send track color update event via UDP.
+
+        Event: /live/track/color <track_idx> <color_rgb>
+        
+        Sent when user changes a track's color in Live.
+        Performance: Non-blocking UDP send, <0.5ms
+        """
+        try:
+            if not self._selected_track:
+                return
+            
+            track_idx = self._selected_track_idx
+            
+            # Get actual RGB color from Live API
+            try:
+                color_rgb = int(self._selected_track.color)
+                self.sender.send_event("/live/track/color", track_idx, color_rgb)
+                self.log(f"[CursorObserver] Track {track_idx} color changed: 0x{color_rgb:06X}")
+            except (AttributeError, ValueError) as e:
+                self.log(f"[CursorObserver] Error getting track color: {e}")
+                
+        except Exception as e:
+            self.log(f"[CursorObserver] Error sending track color update: {e}")
 
     def _send_scene_selection(self):
         """
