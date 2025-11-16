@@ -8,6 +8,7 @@ dependencies = [
     "websockets>=12.0",
     "aiohttp>=3.9.0",
     "watchdog>=3.0.0",
+    "mkdocs-material>=9.7.0",
 ]
 
 [project.optional-dependencies]

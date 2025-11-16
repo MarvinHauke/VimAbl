@@ -1,0 +1,51 @@
+site_name: Documentation for Vimabl
+site_url: https://sitename.example
+
+theme:
+  name: material
+  font:
+    text: Inter
+  logo: assets/logo.png
+  favicon: assets/favicon.ico
+
+  features:
+    - navigation.footer
+    - content.code.copy
+    - navigation.instant
+    - navigation.tracking
+    - content.action.edit
+
+  palette:
+    # --- Ableton Dark Mode ---
+    - scheme: slate
+      primary: grey
+      accent: lime # neon accent (Ableton style)
+      toggle:
+        icon: material/weather-sunny
+        name: "Dark mode"
+
+    # --- Ableton Light Mode ---
+    - scheme: default
+      primary: grey
+      accent: yellow # Ableton-style contrast
+      toggle:
+        icon: material/weather-night
+        name: "Light mode"
+
+markdown_extensions:
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tasklist:
+      custom_checkbox: true
