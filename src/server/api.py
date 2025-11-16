@@ -110,6 +110,10 @@ class ASTServer:
                 id=f"track_{track_data['index']}"
             )
 
+            # Set color if available
+            if track_data.get("color") is not None:
+                track_node.attributes["color"] = track_data["color"]
+
             # Add devices to track
             for device_idx, device_data in enumerate(track_data.get("devices", [])):
                 device_node = DeviceNode(

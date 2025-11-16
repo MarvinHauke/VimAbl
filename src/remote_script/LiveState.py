@@ -9,6 +9,7 @@ from .observers import ViewObservers, ObserverManager
 from .commands import CommandHandlers
 from .server import CommandServer
 from .udp_sender import UDPSender
+from .cursor_observer import SessionCursorObserver
 
 
 class LiveState(ControlSurface):
@@ -35,6 +36,14 @@ class LiveState(ControlSurface):
         )
         self.udp_observer_manager.start()
         self.log_message("UDP observer manager started")
+
+        # Initialize Session View cursor observer
+        self.cursor_observer = SessionCursorObserver(
+            song=self.song(),
+            sender=self.udp_sender,
+            log_func=self.log_message
+        )
+        self.log_message("Session cursor observer initialized")
 
         # Initialize command handlers
         self.command_handlers = CommandHandlers(
@@ -92,9 +101,18 @@ class LiveState(ControlSurface):
         if hasattr(self, 'udp_observer_manager'):
             self.udp_observer_manager.update()
 
+        # Update cursor observer (polls highlighted_clip_slot)
+        if hasattr(self, 'cursor_observer'):
+            self.cursor_observer.update()
+
     def disconnect(self):
         """Called when script is disconnected"""
         self.log_message("Live State Remote Script disconnecting")
+
+        # Disconnect cursor observer
+        if hasattr(self, 'cursor_observer'):
+            self.cursor_observer.disconnect()
+            self.log_message("Cursor observer disconnected")
 
         # Stop UDP observer manager
         if hasattr(self, 'udp_observer_manager'):

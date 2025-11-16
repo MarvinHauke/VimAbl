@@ -3,7 +3,9 @@
 	import { ASTWebSocketClient } from '$lib/api/websocket';
 	import { connectionStore } from '$lib/stores/connection';
 	import { astStore } from '$lib/stores/ast.svelte';
+	import { cursorStore } from '$lib/stores/cursor.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
+	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
 	import TreeView from '$lib/components/TreeView.svelte';
 	import type {
 		WebSocketMessage,
@@ -42,16 +44,23 @@
 						astStore.applyDiff(changes);
 					}
 				} else if (message.type === 'live_event') {
-					// Apply real-time UDP event to AST
+					// Apply real-time UDP event to AST or cursor
 					const liveEvent = message as LiveEventMessage;
-					astStore.applyLiveEvent(
-						liveEvent.payload.event_path,
-						liveEvent.payload.args,
-						liveEvent.payload.seq_num
-					);
+					const eventPath = liveEvent.payload.event_path;
+					const args = liveEvent.payload.args;
+
+					// Check if this is a cursor event
+					if (eventPath.startsWith('/live/cursor/')) {
+						// Handle cursor event
+						cursorStore.applyCursorEvent(eventPath, args);
+					} else {
+						// Handle AST update event
+						astStore.applyLiveEvent(eventPath, args, liveEvent.payload.seq_num);
+					}
+
 					console.log(
-						`[UDP Event #${liveEvent.payload.seq_num}] ${liveEvent.payload.event_path}`,
-						liveEvent.payload.args
+						`[UDP Event #${liveEvent.payload.seq_num}] ${eventPath}`,
+						args
 					);
 				} else if (message.type === 'ERROR') {
 					connectionStore.setError(message.payload.error);
@@ -78,7 +87,10 @@
 		<header class="mb-8">
 			<h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-4">🎧 VimAbl AST TreeViewer</h1>
 			<p class="text-gray-600 dark:text-gray-400 mb-4">Real-time Ableton Live project visualization</p>
-			<ConnectionStatus />
+			<div class="flex gap-4 items-start">
+				<ConnectionStatus />
+				<SettingsPanel />
+			</div>
 		</header>
 
 		<main class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">

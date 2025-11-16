@@ -1,0 +1,301 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VimAbl Cursor Event Schema",
+  "description": "Schema for cursor/selection tracking events from Ableton Live",
+
+  "definitions": {
+    "cursorEvent": {
+      "type": "object",
+      "required": ["type", "payload"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "cursor_event",
+          "description": "Message type identifier"
+        },
+        "payload": {
+          "oneOf": [
+            { "$ref": "#/definitions/sessionCursor" },
+            { "$ref": "#/definitions/arrangementCursor" },
+            { "$ref": "#/definitions/detailCursor" }
+          ]
+        }
+      }
+    },
+
+    "sessionCursor": {
+      "type": "object",
+      "description": "Session View cursor/selection state",
+      "properties": {
+        "view": {
+          "type": "string",
+          "const": "session"
+        },
+        "track": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Selected track index (0-based)"
+        },
+        "scene": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Selected scene index (0-based)"
+        },
+        "clipSlot": {
+          "type": "object",
+          "description": "Highlighted clip slot in Session View",
+          "properties": {
+            "track": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "scene": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hasClip": {
+              "type": "boolean",
+              "description": "Whether slot contains a clip"
+            },
+            "isPlaying": {
+              "type": "boolean",
+              "description": "Whether clip is currently playing"
+            },
+            "isTriggered": {
+              "type": "boolean",
+              "description": "Whether clip is triggered to play"
+            }
+          },
+          "required": ["track", "scene"]
+        }
+      }
+    },
+
+    "arrangementCursor": {
+      "type": "object",
+      "description": "Arrangement View playhead position",
+      "required": ["view", "position"],
+      "properties": {
+        "view": {
+          "type": "string",
+          "const": "arrangement"
+        },
+        "position": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Playhead position in beats"
+        },
+        "isPlaying": {
+          "type": "boolean",
+          "description": "Whether transport is playing"
+        }
+      }
+    },
+
+    "detailCursor": {
+      "type": "object",
+      "description": "Detail View (clip/device editor) focus",
+      "required": ["view", "focusType"],
+      "properties": {
+        "view": {
+          "type": "string",
+          "const": "detail"
+        },
+        "focusType": {
+          "type": "string",
+          "enum": ["clip", "device", "none"],
+          "description": "What is focused in detail view"
+        },
+        "clip": {
+          "type": "object",
+          "description": "Active clip in detail view (if focusType=clip)",
+          "properties": {
+            "track": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "scene": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["track", "scene"]
+        },
+        "device": {
+          "type": "object",
+          "description": "Selected device (if focusType=device)",
+          "properties": {
+            "track": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "deviceIndex": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": ["track", "deviceIndex"]
+        },
+        "parameter": {
+          "type": "object",
+          "description": "Selected parameter (if any)",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": ["name", "value"]
+        }
+      }
+    }
+  },
+
+  "examples": [
+    {
+      "description": "Session View - Track selected",
+      "data": {
+        "type": "cursor_event",
+        "payload": {
+          "view": "session",
+          "track": 5,
+          "scene": 2
+        }
+      }
+    },
+    {
+      "description": "Session View - Clip slot highlighted",
+      "data": {
+        "type": "cursor_event",
+        "payload": {
+          "view": "session",
+          "track": 3,
+          "scene": 1,
+          "clipSlot": {
+            "track": 3,
+            "scene": 1,
+            "hasClip": true,
+            "isPlaying": true,
+            "isTriggered": false
+          }
+        }
+      }
+    },
+    {
+      "description": "Arrangement View - Playhead position",
+      "data": {
+        "type": "cursor_event",
+        "payload": {
+          "view": "arrangement",
+          "position": 64.5,
+          "isPlaying": true
+        }
+      }
+    },
+    {
+      "description": "Detail View - Clip editor focused",
+      "data": {
+        "type": "cursor_event",
+        "payload": {
+          "view": "detail",
+          "focusType": "clip",
+          "clip": {
+            "track": 2,
+            "scene": 0
+          }
+        }
+      }
+    },
+    {
+      "description": "Detail View - Device selected with parameter",
+      "data": {
+        "type": "cursor_event",
+        "payload": {
+          "view": "detail",
+          "focusType": "device",
+          "device": {
+            "track": 4,
+            "deviceIndex": 1,
+            "name": "Reverb"
+          },
+          "parameter": {
+            "name": "Dry/Wet",
+            "value": 0.65
+          }
+        }
+      }
+    }
+  ],
+
+  "udpEventMapping": {
+    "description": "Mapping from UDP/OSC events to JSON cursor events",
+    "events": [
+      {
+        "oscPath": "/live/cursor/track",
+        "args": ["int:track_idx"],
+        "mapsTo": {
+          "view": "session",
+          "track": "track_idx"
+        }
+      },
+      {
+        "oscPath": "/live/cursor/scene",
+        "args": ["int:scene_idx"],
+        "mapsTo": {
+          "view": "session",
+          "scene": "scene_idx"
+        }
+      },
+      {
+        "oscPath": "/live/cursor/clip_slot",
+        "args": ["int:track_idx", "int:scene_idx", "int:has_clip", "int:is_playing", "int:is_triggered"],
+        "mapsTo": {
+          "view": "session",
+          "clipSlot": {
+            "track": "track_idx",
+            "scene": "scene_idx",
+            "hasClip": "has_clip != 0",
+            "isPlaying": "is_playing != 0",
+            "isTriggered": "is_triggered != 0"
+          }
+        }
+      },
+      {
+        "oscPath": "/live/cursor/playhead",
+        "args": ["float:position"],
+        "mapsTo": {
+          "view": "arrangement",
+          "position": "position"
+        }
+      },
+      {
+        "oscPath": "/live/cursor/detail_clip",
+        "args": ["int:track_idx", "int:scene_idx"],
+        "mapsTo": {
+          "view": "detail",
+          "focusType": "clip",
+          "clip": {
+            "track": "track_idx",
+            "scene": "scene_idx"
+          }
+        }
+      },
+      {
+        "oscPath": "/live/cursor/parameter",
+        "args": ["string:name", "float:value"],
+        "mapsTo": {
+          "view": "detail",
+          "parameter": {
+            "name": "name",
+            "value": "value"
+          }
+        }
+      }
+    ]
+  }
+}
