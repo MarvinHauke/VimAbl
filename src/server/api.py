@@ -110,6 +110,10 @@ class ASTServer:
                 id=f"track_{track_data['index']}"
             )
 
+            # Set track type (regular, return, or master)
+            if track_data.get("type") is not None:
+                track_node.attributes["type"] = track_data["type"]
+
             # Set color if available
             if track_data.get("color") is not None:
                 track_node.attributes["color"] = track_data["color"]

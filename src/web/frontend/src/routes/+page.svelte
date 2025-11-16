@@ -53,6 +53,13 @@
 					if (eventPath.startsWith('/live/cursor/')) {
 						// Handle cursor event
 						cursorStore.applyCursorEvent(eventPath, args);
+
+						// Also update AST if track selection provides name/color
+						// (important for master track which may not have name in XML)
+						if (eventPath === '/live/cursor/track' && args.length >= 3 && args[2]) {
+							// Update track name in AST if provided by Live API
+							astStore.applyLiveEvent('/live/track/renamed', [args[0], args[2]], liveEvent.payload.seq_num);
+						}
 					} else {
 						// Handle AST update event
 						astStore.applyLiveEvent(eventPath, args, liveEvent.payload.seq_num);

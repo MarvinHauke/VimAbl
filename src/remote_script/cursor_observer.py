@@ -57,6 +57,8 @@ class SessionCursorObserver:
 
         # Track/scene list caches (rebuilt on track/scene add/remove)
         self._tracks_list = None
+        self._return_tracks_list = None
+        self._master_track = None
         self._scenes_list = None
         self._rebuild_caches()
 
@@ -74,8 +76,15 @@ class SessionCursorObserver:
         Converts tuple to list for O(1) index() lookups.
         """
         self._tracks_list = list(self.song.tracks)
+        self._return_tracks_list = list(self.song.return_tracks)
+        self._master_track = self.song.master_track
         self._scenes_list = list(self.song.scenes)
-        self.log(f"[CursorObserver] Cache rebuilt: {len(self._tracks_list)} tracks, {len(self._scenes_list)} scenes")
+        
+        self.log(
+            f"[CursorObserver] Cache rebuilt: {len(self._tracks_list)} tracks, "
+            f"{len(self._return_tracks_list)} returns, "
+            f"{len(self._scenes_list)} scenes"
+        )
 
     def _add_listeners(self):
         """Add observers to track selection changes."""
@@ -133,6 +142,7 @@ class SessionCursorObserver:
 
         Performance: O(1) - just set flag and cache track reference
         Also adds color listener to the newly selected track.
+        Handles regular tracks, return tracks, and master track.
         """
         try:
             # Remove color listener from old track
@@ -140,15 +150,59 @@ class SessionCursorObserver:
                 self._selected_track.remove_color_listener(self._on_track_color_changed)
             
             track = self.view.selected_track
-            if track and self._tracks_list:
-                # O(1) index lookup (list.index is optimized in CPython)
-                self._selected_track_idx = self._tracks_list.index(track)
-                self._selected_track = track  # Cache track object for color/name access
+            if not track:
+                self._selected_track_idx = None
+                self._selected_track = None
+                return
+            
+            # Check master track FIRST (before return tracks)
+            if track == self._master_track:
+                # Master is always last
+                self._selected_track_idx = len(self._tracks_list) + len(self._return_tracks_list)
+                self._selected_track = track
                 self._track_changed = True
                 
-                # Add color listener to new track
                 if not track.color_has_listener(self._on_track_color_changed):
                     track.add_color_listener(self._on_track_color_changed)
+                
+                self.log(f"[CursorObserver] Master track selected, index: {self._selected_track_idx}")
+                return
+            
+            # Try regular tracks
+            try:
+                if track in self._tracks_list:
+                    self._selected_track_idx = self._tracks_list.index(track)
+                    self._selected_track = track
+                    self._track_changed = True
+                    
+                    # Add color listener to new track
+                    if not track.color_has_listener(self._on_track_color_changed):
+                        track.add_color_listener(self._on_track_color_changed)
+                    return
+            except ValueError:
+                pass
+            
+            # Try return tracks
+            try:
+                if track in self._return_tracks_list:
+                    # Return tracks start after regular tracks
+                    return_idx = self._return_tracks_list.index(track)
+                    self._selected_track_idx = len(self._tracks_list) + return_idx
+                    self._selected_track = track
+                    self._track_changed = True
+                    
+                    if not track.color_has_listener(self._on_track_color_changed):
+                        track.add_color_listener(self._on_track_color_changed)
+                    
+                    self.log(f"[CursorObserver] Return track selected: {return_idx}, global index: {self._selected_track_idx}")
+                    return
+            except ValueError:
+                pass
+            
+            # Track not found in any list
+            self.log(f"[CursorObserver] Selected track not found in any track list")
+            self._selected_track_idx = None
+            self._selected_track = None
                     
         except (ValueError, AttributeError) as e:
             # Track not in list (edge case: track was just deleted)
