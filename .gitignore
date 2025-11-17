@@ -101,3 +101,7 @@ hs.ipc
 *.asd
 Ableton Project Info/
 Backup/
+
+# MkDocs
+site/
+docs/_auto-generated/

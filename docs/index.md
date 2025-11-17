@@ -1,7 +1,7 @@
 # VimAbl - Ableton Live LSP
 
 !!! info "Welcome to VimAbl"
-    Vim-like keybindings and LSP-style server functionality for Ableton Live. Control Live with intuitive keyboard shortcuts powered by a Python Remote Script and Hammerspoon automation.
+Vim-like keybindings and LSP-style server functionality for Ableton Live. Control Live with intuitive keyboard shortcuts powered by a Python Remote Script and Hammerspoon automation.
 
 ## What is VimAbl?
 
@@ -20,17 +20,20 @@ VimAbl brings the power of Vim-style keyboard navigation to Ableton Live, combin
 ## Quick Navigation
 
 ### 🚀 Getting Started
+
 - [Installation Guide](installation.md) - Complete setup instructions
 - [Quick Start](quick-start.md) - Get up and running in 5 minutes
 - [User Guide](user-guide/overview.md) - Learn how to use VimAbl
 
 ### 📖 Documentation
+
 - [User Guide](user-guide/overview.md) - Navigation, editing, and keybindings
 - [Architecture](architecture/overview.md) - System design and components
 - [API Reference](api-reference/commands.md) - Command and protocol documentation
 - [Development](development/extending.md) - Extending and contributing
 
 ### 🔧 Resources
+
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions
 - [FAQ](faq.md) - Frequently asked questions
 - [Changelog](changelog.md) - Version history
@@ -58,12 +61,12 @@ graph TB
 
 ## Performance Metrics
 
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| End-to-end latency | < 100ms | ~10ms | ✅ 10x better |
-| UDP send time | < 1ms | ~0.5ms | ✅ 2x better |
-| CPU usage (Remote Script) | < 5% | ~2% | ✅ |
-| Packet loss | < 0.1% | 0% | ✅ Perfect |
+| Metric                    | Target  | Actual | Status        |
+| ------------------------- | ------- | ------ | ------------- |
+| End-to-end latency        | < 100ms | ~10ms  | ✅ 10x better |
+| UDP send time             | < 1ms   | ~0.5ms | ✅ 2x better  |
+| CPU usage (Remote Script) | < 5%    | ~2%    | ✅            |
+| Packet loss               | < 0.1%  | 0%     | ✅ Perfect    |
 
 ## Next Steps
 
@@ -73,8 +76,8 @@ graph TB
 
 ## Community & Support
 
-- **GitHub Repository**: [VimAbl on GitHub](https://github.com/yourusername/VimAbl)
-- **Issues & Bug Reports**: [GitHub Issues](https://github.com/yourusername/VimAbl/issues)
+- **GitHub Repository**: [VimAbl on GitHub](https://github.com/MarvinHauke/VimAbl)
+- **Issues & Bug Reports**: [GitHub Issues](https://github.com/MarvinHauke/VimAbl/issues)
 - **Contributions**: See [Development Guide](development/extending.md)
 
 ---
