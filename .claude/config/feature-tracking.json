@@ -1,0 +1,146 @@
+{
+  "version": "1.0",
+  "last_updated": "2025-11-17",
+  "features": [
+    {
+      "name": "Session View Cursor Tracking",
+      "status": "documented",
+      "implemented_date": "2025-11-16",
+      "documented_date": "2025-11-17",
+      "components": ["python", "web"],
+      "docs": [
+        "user-guide/udp-observers.md",
+        "api-reference/osc-protocol.md",
+        "architecture/overview.md"
+      ],
+      "description": "Real-time highlighting of selected scene in TreeViewer with cursor tracking events",
+      "related_issues": [],
+      "notes": "Part of Phase 5f - UDP/OSC Real-Time Observers"
+    },
+    {
+      "name": "UDP/OSC Real-Time Observer System",
+      "status": "documented",
+      "implemented_date": "2025-11-12",
+      "documented_date": "2025-11-17",
+      "components": ["python"],
+      "docs": [
+        "user-guide/udp-observers.md",
+        "api-reference/osc-protocol.md",
+        "architecture/overview.md",
+        "planned-features.md"
+      ],
+      "description": "Real-time event streaming from Ableton Live via UDP/OSC with TrackObserver, DeviceObserver, and TransportObserver",
+      "related_issues": [],
+      "notes": "Phase 5f complete - 87.5% overall progress"
+    },
+    {
+      "name": "WebSocket TreeViewer",
+      "status": "documented",
+      "implemented_date": "2025-11-10",
+      "documented_date": "2025-11-17",
+      "components": ["python", "web", "server"],
+      "docs": [
+        "quick-start.md",
+        "architecture/overview.md",
+        "planned-features.md"
+      ],
+      "description": "Svelte-based web UI for real-time visualization of Ableton Live project structure",
+      "related_issues": [],
+      "notes": "Phases 1-2 complete from original TODO"
+    },
+    {
+      "name": "Vim-Style Navigation (gg, G)",
+      "status": "documented",
+      "implemented_date": "2025-11-10",
+      "documented_date": "2025-11-17",
+      "components": ["lua", "python"],
+      "docs": [
+        "user-guide/navigation.md",
+        "user-guide/keybindings.md",
+        "user-guide/session-vs-arrangement.md",
+        "quick-start.md"
+      ],
+      "description": "Vim-style navigation commands for jumping to first/last scene or track",
+      "related_issues": [],
+      "notes": "Core feature - v0.1.0"
+    },
+    {
+      "name": "Vim-Style Editing (dd, za)",
+      "status": "documented",
+      "implemented_date": "2025-11-10",
+      "documented_date": "2025-11-17",
+      "components": ["lua", "python"],
+      "docs": [
+        "user-guide/editing.md",
+        "user-guide/keybindings.md",
+        "quick-start.md"
+      ],
+      "description": "Vim-style editing commands for delete and undo operations",
+      "related_issues": [],
+      "notes": "Core feature - v0.1.0"
+    },
+    {
+      "name": "Hammerspoon Auto-Recovery",
+      "status": "documented",
+      "implemented_date": "2025-11-10",
+      "documented_date": "2025-11-17",
+      "components": ["lua"],
+      "docs": [
+        "troubleshooting.md",
+        "architecture/overview.md"
+      ],
+      "description": "Automatic eventtap restart every 5 seconds if disabled",
+      "related_issues": [],
+      "notes": "Stability improvement - v0.1.0"
+    }
+  ],
+  "documentation_coverage": {
+    "total_features": 6,
+    "documented": 6,
+    "partially_documented": 0,
+    "undocumented": 0,
+    "coverage_percentage": 100
+  },
+  "components": {
+    "python": {
+      "description": "Python Remote Script (runs inside Ableton Live)",
+      "path": "src/remote_script/",
+      "features": 4
+    },
+    "lua": {
+      "description": "Hammerspoon Lua automation scripts",
+      "path": "src/hammerspoon/",
+      "features": 3
+    },
+    "web": {
+      "description": "Svelte web UI (TreeViewer)",
+      "path": "src/web/frontend/",
+      "features": 2
+    },
+    "server": {
+      "description": "WebSocket AST server",
+      "path": "src/server/",
+      "features": 1
+    }
+  },
+  "next_to_document": [
+    {
+      "name": "Real-Time Diff Visualization",
+      "phase": "Phase 3",
+      "priority": "high",
+      "estimated_completion": "2025-12-01"
+    },
+    {
+      "name": "Search & Filter UI",
+      "phase": "Phase 4a",
+      "priority": "high",
+      "estimated_completion": "2025-12-15"
+    },
+    {
+      "name": "UDP/AST Server Integration",
+      "phase": "Phase 5e",
+      "priority": "high",
+      "estimated_completion": "2025-11-30"
+    }
+  ]
+}

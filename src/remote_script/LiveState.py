@@ -5,9 +5,11 @@ Main Remote Script controller that observes Live's state
 import Live
 from _Framework.ControlSurface import ControlSurface
 
-from .observers import ViewObservers
+from .observers import ViewObservers, ObserverManager
 from .commands import CommandHandlers
 from .server import CommandServer
+from .udp_sender import UDPSender
+from .cursor_observer import SessionCursorObserver
 
 
 class LiveState(ControlSurface):
@@ -18,16 +20,38 @@ class LiveState(ControlSurface):
 
         self.application = Live.Application.get_application()
 
-        # Initialize observers
+        # Initialize view observers
         self.observers = ViewObservers(self.application, self.log_message)
         self.observers.setup()
+
+        # Initialize UDP sender for real-time events
+        self.udp_sender = UDPSender(host="127.0.0.1", port=9002)
+        self.udp_sender.start()
+        self.log_message("UDP sender initialized on 127.0.0.1:9002")
+
+        # Initialize Live API observers (tracks, devices, transport)
+        self.udp_observer_manager = ObserverManager(
+            song=self.song(),
+            udp_sender=self.udp_sender
+        )
+        self.udp_observer_manager.start()
+        self.log_message("UDP observer manager started")
+
+        # Initialize Session View cursor observer
+        self.cursor_observer = SessionCursorObserver(
+            song=self.song(),
+            sender=self.udp_sender,
+            log_func=self.log_message
+        )
+        self.log_message("Session cursor observer initialized")
 
         # Initialize command handlers
         self.command_handlers = CommandHandlers(
             song_accessor=self.song,
             application=self.application,
             observers=self.observers,
-            log_callback=self.log_message
+            log_callback=self.log_message,
+            udp_observer_manager=self.udp_observer_manager
         )
 
         # Initialize and start server
@@ -66,11 +90,41 @@ class LiveState(ControlSurface):
         except Exception as e:
             self.log_message(f"Error in document path listener: {str(e)}")
 
+    def update_display(self):
+        """
+        Called periodically by Ableton Live's main loop (~60Hz).
+        Used to check for trailing edge events that need to be sent.
+        """
+        super(LiveState, self).update_display()
+
+        # Check for trailing edge debounce events
+        if hasattr(self, 'udp_observer_manager'):
+            self.udp_observer_manager.update()
+
+        # Update cursor observer (polls highlighted_clip_slot)
+        if hasattr(self, 'cursor_observer'):
+            self.cursor_observer.update()
+
     def disconnect(self):
         """Called when script is disconnected"""
         self.log_message("Live State Remote Script disconnecting")
 
-        # Remove observers
+        # Disconnect cursor observer
+        if hasattr(self, 'cursor_observer'):
+            self.cursor_observer.disconnect()
+            self.log_message("Cursor observer disconnected")
+
+        # Stop UDP observer manager
+        if hasattr(self, 'udp_observer_manager'):
+            self.udp_observer_manager.stop()
+            self.log_message("UDP observer manager stopped")
+
+        # Stop UDP sender
+        if hasattr(self, 'udp_sender'):
+            self.udp_sender.stop()
+            self.log_message("UDP sender stopped")
+
+        # Remove view observers
         self.observers.teardown()
 
         super().disconnect()

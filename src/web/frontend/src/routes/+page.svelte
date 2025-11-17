@@ -3,9 +3,15 @@
 	import { ASTWebSocketClient } from '$lib/api/websocket';
 	import { connectionStore } from '$lib/stores/connection';
 	import { astStore } from '$lib/stores/ast.svelte';
+	import { cursorStore } from '$lib/stores/cursor.svelte';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
+	import SettingsPanel from '$lib/components/SettingsPanel.svelte';
 	import TreeView from '$lib/components/TreeView.svelte';
-	import type { WebSocketMessage, FullASTMessage } from '$lib/types/ast';
+	import type {
+		WebSocketMessage,
+		FullASTMessage,
+		LiveEventMessage
+	} from '$lib/types/ast';
 
 	let client: ASTWebSocketClient | null = null;
 
@@ -23,7 +29,7 @@
 					astStore.setAST(fullMessage.payload.ast, fullMessage.payload.project_path);
 					console.log('[WebSocket] Loaded full AST');
 				} else if (message.type === 'DIFF_UPDATE') {
-					// Apply incremental diff
+					// Apply incremental diff from XML file save
 					const diffMessage = message as any;
 					if (diffMessage.payload?.diff) {
 						const diff = diffMessage.payload.diff;
@@ -37,8 +43,39 @@
 						console.log('[WebSocket] Diff payload:', diffMessage.payload);
 						astStore.applyDiff(changes);
 					}
+				} else if (message.type === 'live_event') {
+					// Apply real-time UDP event to AST or cursor
+					const liveEvent = message as LiveEventMessage;
+					const eventPath = liveEvent.payload.event_path;
+					const args = liveEvent.payload.args;
+
+					// Check if this is a cursor event
+					if (eventPath.startsWith('/live/cursor/')) {
+						// Handle cursor event
+						cursorStore.applyCursorEvent(eventPath, args);
+
+						// Also update AST if track selection provides name/color
+						// (important for master track which may not have name in XML)
+						if (eventPath === '/live/cursor/track' && args.length >= 3 && args[2]) {
+							// Update track name in AST if provided by Live API
+							astStore.applyLiveEvent('/live/track/renamed', [args[0], args[2]], liveEvent.payload.seq_num);
+						}
+					} else {
+						// Handle AST update event
+						astStore.applyLiveEvent(eventPath, args, liveEvent.payload.seq_num);
+					}
+
+					console.log(
+						`[UDP Event #${liveEvent.payload.seq_num}] ${eventPath}`,
+						args
+					);
 				} else if (message.type === 'ERROR') {
 					connectionStore.setError(message.payload.error);
+					// Check if this is a gap warning
+					if (message.payload.details?.includes('gap')) {
+						astStore.setStale(true);
+						console.warn('[WebSocket] UDP event gap detected - AST may be stale');
+					}
 				}
 			},
 			onError: (error) => connectionStore.setError(error.message)
@@ -57,7 +94,10 @@
 		<header class="mb-8">
 			<h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-4">🎧 VimAbl AST TreeViewer</h1>
 			<p class="text-gray-600 dark:text-gray-400 mb-4">Real-time Ableton Live project visualization</p>
-			<ConnectionStatus />
+			<div class="flex gap-4 items-start">
+				<ConnectionStatus />
+				<SettingsPanel />
+			</div>
 		</header>
 
 		<main class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
