@@ -752,7 +752,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 
 ---
 
-## Phase 9: ZeroMQ Integration (Future/Optional)
+## Phase 10: ZeroMQ Integration (Future/Optional)
 
 **Priority: LOW**
 **Dependencies: Phase 5 complete and stable**
@@ -784,7 +784,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
           └────────────────────────────────┘
 ```
 
-### Phase 9a: ZeroMQ Setup
+### Phase 10a: ZeroMQ Setup
 
 - [ ] Package `pyzmq` for Ableton's Python environment
   - [ ] Test if `pyzmq` can be imported in Remote Script
@@ -800,7 +800,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [ ] Subscribe to all topics (or filter by prefix)
   - [ ] Forward to AST server's event handler
 
-### Phase 9b: Migration from UDP to ZMQ
+### Phase 10b: Migration from UDP to ZMQ
 
 - [ ] Implement dual-mode support (UDP + ZMQ)
   - [ ] Remote Script tries ZMQ first, falls back to UDP
@@ -815,7 +815,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [ ] If ZMQ is stable, deprecate UDP path
   - [ ] Keep UDP as fallback for compatibility
 
-### Phase 9c: Advanced ZMQ Features
+### Phase 10c: Advanced ZMQ Features
 
 - [ ] Implement heartbeat mechanism
   - [ ] Remote Script sends periodic heartbeat
@@ -868,13 +868,229 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 
 ---
 
-## Phase 6: Advanced Features
+## Phase 6: ClipSlot Matrix Implementation
+
+**Priority: HIGH**
+**Dependencies: Phase 3 (AST foundation), Phase 5 (UDP/OSC observers)**
+**Goal: Implement full scene×track ClipSlot matrix for proper cursor highlighting and real-time clip state**
+
+**📄 Design Document**: `docs/CLIP_SLOT_MATRIX_IMPLEMENTATION.md`
+
+### Overview
+
+Implement a complete ClipSlot matrix that represents ALL clip slots (empty and filled) in the Session View grid. This enables:
+- Cursor highlighting of empty clip slots in web UI
+- Real-time detection of clip playback state (playing, triggered)
+- Display of has_stop_button property
+- Proper scene×track matrix representation
+- Easy addition/removal of scenes
+
+### Phase 6a: Add CLIP_SLOT Node Type ⏳ IN PROGRESS
+
+**Estimated Time**: 30 minutes
+
+- [ ] Update `src/ast/node.py` - Add CLIP_SLOT node type
+  - [ ] Add `CLIP_SLOT = "clip_slot"` to `NodeType` enum
+  - [ ] Create `ClipSlotNode` class with attributes:
+    - `track_index: int` - Parent track index
+    - `scene_index: int` - Scene row index
+    - `has_clip: bool` - Whether slot contains a clip
+    - `has_stop_button: bool` - Whether slot has stop button (from XML)
+    - `is_playing: bool` - Clip playback state (real-time)
+    - `is_triggered: bool` - Clip trigger state (real-time)
+  - [ ] Update `src/ast/__init__.py` exports
+- [ ] Test node type
+  - [ ] Import `ClipSlotNode` successfully
+  - [ ] Create test instances
+  - [ ] Verify all attributes work correctly
+
+### Phase 6b: Update XML Parser for ClipSlots
+
+**Estimated Time**: 2 hours
+
+- [ ] Refactor `src/parser/clips.py`
+  - [ ] Create new function: `extract_clip_slots(track_elem, track_index, num_scenes)`
+    - [ ] Extract ALL clip slots from `ClipSlotList` (both empty and filled)
+    - [ ] Parse `HasStop` property for each slot
+    - [ ] Return list with one entry per scene
+    - [ ] Pad with empty slots if XML has fewer than `num_scenes`
+  - [ ] Update `_extract_clip_from_slot()` to work with new structure
+  - [ ] Keep old `extract_clips()` for backward compatibility (optional)
+- [ ] Update `src/parser/ast_builder.py`
+  - [ ] Extract scenes FIRST to get `num_scenes`
+  - [ ] Pass `num_scenes` to `extract_clip_slots()`
+  - [ ] Replace `tracks[i]['clips']` with `tracks[i]['clip_slots']`
+  - [ ] Maintain `clips` array temporarily for backward compatibility
+- [ ] Test XML parsing
+  - [ ] Parse example project with clips
+  - [ ] Verify `clip_slots` array exists for each track
+  - [ ] Check `len(clip_slots) == num_scenes` for all regular tracks
+  - [ ] Verify empty slots have `has_clip=False`
+  - [ ] Verify filled slots have `has_clip=True` and clip data
+  - [ ] Check `has_stop_button` property parsed from XML
+
+### Phase 6c: Build ClipSlotNode Tree
+
+**Estimated Time**: 1 hour
+
+- [ ] Update `src/server/api.py` - Modify `_build_node_tree()`
+  - [ ] Create `ClipSlotNode` for each slot in `track['clip_slots']`
+  - [ ] Set node ID: `f"slot_{track_idx}_{scene_idx}"`
+  - [ ] Set initial attributes (has_clip, has_stop_button, is_playing=False, is_triggered=False)
+  - [ ] If slot has clip, create `ClipNode` as child of `ClipSlotNode`
+  - [ ] Add all clip_slots as children of track node
+- [ ] Test AST structure
+  - [ ] Build AST from example project
+  - [ ] Verify `ClipSlotNode` instances created
+  - [ ] Check empty slots have no clip children
+  - [ ] Check filled slots have `ClipNode` child
+  - [ ] Verify `track.children` includes all clip_slots
+  - [ ] Confirm node IDs are unique
+  - [ ] Serialize to JSON and inspect structure
+
+### Phase 6d: Update Web UI for ClipSlots
+
+**Estimated Time**: 2 hours
+
+- [ ] Update `src/web/frontend/src/lib/components/TreeNode.svelte`
+  - [ ] Add clip_slot node icon logic:
+    - 🎵 for filled slots (has_clip=True)
+    - ⏹️ for empty slots with stop button
+    - ⊘ for empty slots without stop button
+  - [ ] Update `isHighlightedClipSlot` derived value to use new structure
+  - [ ] Add `clipSlotStateClass` for visual states:
+    - `clip-playing` - Green for actively playing
+    - `clip-triggered` - Yellow pulse for triggered (will play)
+    - `clip-filled` - Default for has_clip
+    - `clip-empty` - Dimmed for empty slots
+    - `clip-no-stop` - Italic for no stop button
+  - [ ] Add CSS styles for all clip_slot states
+    - Highlighted slot (cursor selection): yellow/gold border
+    - Playing: green background
+    - Triggered: yellow background with pulse animation
+    - Empty: reduced opacity
+- [ ] Test web UI rendering
+  - [ ] Load project in web UI
+  - [ ] Verify clip_slot nodes appear under each track
+  - [ ] Check icons display correctly
+  - [ ] Select empty slot in Live → Verify highlight in UI
+  - [ ] Select filled slot in Live → Verify highlight in UI
+  - [ ] Check all visual states render correctly
+
+### Phase 6e: Real-Time ClipSlot State Updates
+
+**Estimated Time**: 2 hours
+
+- [ ] Update `src/remote_script/observers.py` - Enhance `TrackObserver`
+  - [ ] Add `is_playing` listener to each clip_slot
+    - [ ] Create `_create_is_playing_callback(scene_idx)` method
+    - [ ] Add listener: `clip_slot.add_is_playing_listener(callback)`
+    - [ ] Implement `_on_clip_playing_changed(scene_idx)` handler
+    - [ ] Send OSC event: `/live/clip_slot/playing <track> <scene> <bool>`
+  - [ ] Add `is_triggered` listener to each clip_slot
+    - [ ] Create `_create_is_triggered_callback(scene_idx)` method
+    - [ ] Add listener: `clip_slot.add_is_triggered_listener(callback)`
+    - [ ] Implement `_on_clip_triggered_changed(scene_idx)` handler
+    - [ ] Send OSC event: `/live/clip_slot/triggered <track> <scene> <bool>`
+  - [ ] Update `_observe_clip_slots()` to register new listeners
+  - [ ] Update `unregister()` to remove all listeners properly
+- [ ] Add OSC message builders in `src/remote_script/osc.py`
+  - [ ] `build_clip_slot_playing(track_idx, scene_idx, is_playing)` → tuple
+  - [ ] `build_clip_slot_triggered(track_idx, scene_idx, is_triggered)` → tuple
+- [ ] Update `src/web/frontend/src/lib/stores/ast-updater.ts`
+  - [ ] Handle `/live/clip_slot/playing` event
+    - [ ] Find clip_slot by track_index and scene_index
+    - [ ] Update `is_playing` attribute
+    - [ ] Trigger reactivity
+  - [ ] Handle `/live/clip_slot/triggered` event
+    - [ ] Find clip_slot by track_index and scene_index
+    - [ ] Update `is_triggered` attribute
+    - [ ] Trigger reactivity
+  - [ ] Create `findClipSlot(ast, trackIdx, sceneIdx)` helper
+- [ ] Test real-time updates
+  - [ ] Trigger clip in Live → Check `/live/clip_slot/playing` sent
+  - [ ] Verify web UI shows green playing state
+  - [ ] Stop clip → Verify playing state clears in UI
+  - [ ] Queue clip (trigger before playing) → Check yellow pulse
+  - [ ] Verify triggered state clears when clip starts playing
+  - [ ] Test with multiple clips playing simultaneously
+
+### Phase 6f: Documentation
+
+**Estimated Time**: 1 hour
+
+- [ ] Create architecture documentation
+  - [ ] Document scene×track matrix structure
+  - [ ] Explain XML → AST → WebSocket → UI flow
+  - [ ] Add diagrams showing clip_slot relationships
+  - [ ] Document all clip_slot attributes and their sources
+- [ ] Update user guide
+  - [ ] Explain clip_slot visual indicators in web UI
+  - [ ] Document color coding (green=playing, yellow=triggered, etc.)
+  - [ ] Add troubleshooting for clip highlighting issues
+- [ ] Update CHANGELOG.md
+  - [ ] Add entry for Phase 6 ClipSlot Matrix feature
+  - [ ] Note any breaking changes (if backward compatibility broken)
+- [ ] Code comments
+  - [ ] Add comprehensive docstrings to new functions
+  - [ ] Explain complex logic in clip_slot parsing
+  - [ ] Document observer registration patterns
+
+### Testing Strategy
+
+**Unit Tests**:
+- [ ] `tests/test_clip_slot_parser.py` - XML parsing
+  - Test all empty slots
+  - Test mixed empty/filled slots
+  - Test has_stop_button parsing
+  - Test slot count matches scene count
+
+**Integration Tests**:
+- [ ] `tests/test_clip_slot_ast.py` - AST building
+  - Test ClipSlotNode creation
+  - Test matrix completeness (all tracks × all scenes)
+  - Test clip as child of clip_slot
+
+**Manual Testing Checklist**:
+- [ ] Load project with 8+ scenes and 16+ tracks
+- [ ] Verify all clip_slots visible in web UI
+- [ ] Select various empty slots → Check highlights
+- [ ] Select various filled slots → Check highlights
+- [ ] Trigger clips → Check green playing state
+- [ ] Queue clips → Check yellow triggered state
+- [ ] Stop clips → Check states clear
+- [ ] Test has_stop_button display
+- [ ] Performance test with 50+ scenes
+
+### Success Criteria
+
+- [ ] All clip_slots appear in AST (empty and filled)
+- [ ] Web UI highlights selected clip_slot (empty or filled) ✅ PRIMARY GOAL
+- [ ] Real-time playback state updates (<100ms latency)
+- [ ] Scene×Track matrix is complete and consistent
+- [ ] Performance remains acceptable with large projects
+- [ ] No regressions in existing clip display
+- [ ] Documentation is complete and accurate
+
+### Timeline
+
+- **Phase 6a**: 30 min
+- **Phase 6b**: 2 hours
+- **Phase 6c**: 1 hour
+- **Phase 6d**: 2 hours
+- **Phase 6e**: 2 hours
+- **Phase 6f**: 1 hour
+- **Total**: ~8-9 hours
+
+---
+
+## Phase 7: Advanced Features
 
 **Priority: LOW**
-**Dependencies: Phase 4, Phase 5**
+**Dependencies: Phase 4, Phase 5, Phase 6**
 **Goal: Add nice-to-have features**
 
-### Phase 6a: Diff History Viewer
+### Phase 7a: Diff History Viewer
 
 - [ ] Create `src/lib/stores/history.ts` - Diff history
   - [ ] Store last N diffs (e.g., 50)
@@ -890,7 +1106,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [ ] Open history panel
   - [ ] Verify changes are listed chronologically
 
-### Phase 6b: Export & Snapshots
+### Phase 7b: Export & Snapshots
 
 - [ ] Implement AST snapshot export
   - [ ] "Export AST as JSON" button
@@ -906,7 +1122,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [ ] Load snapshot
   - [ ] Verify differences are shown
 
-### Phase 6c: Theming & Customization
+### Phase 7c: Theming & Customization
 
 - [ ] Implement dark/light mode toggle
   - [ ] Use Tailwind dark mode
@@ -927,7 +1143,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 
 ---
 
-## Phase 7: Testing & Documentation
+## Phase 8: Testing & Documentation
 
 **Priority: HIGH**
 **Dependencies: All previous phases**
@@ -997,7 +1213,7 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
 3. Check browser console for errors
 4. Try refreshing the page
 
-### Phase 7a: Unit Tests
+### Phase 8a: Unit Tests
 
 - [ ] Set up testing framework
   - [ ] Install Vitest: `npm install -D vitest`
@@ -1018,7 +1234,7 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
   - [ ] Verify all tests pass
   - [ ] Check code coverage
 
-### Phase 7b: Integration Tests
+### Phase 8b: Integration Tests
 
 - [ ] Create Python test suite
   - [ ] Test WebSocket server startup
@@ -1035,7 +1251,7 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
   - [ ] Large project performance
   - [ ] Rapid change flooding
 
-### Phase 7c: Documentation
+### Phase 8c: Documentation
 
 - [ ] Update `README.md`
   - [ ] Add WebSocket server setup instructions
@@ -1059,13 +1275,13 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
 
 ---
 
-## Phase 8: Deployment & Distribution
+## Phase 9: Deployment & Distribution
 
 **Priority: LOW**
 **Dependencies: Phase 7**
 **Goal: Make it easy to run the tree viewer**
 
-### Phase 8a: Production Build
+### Phase 9a: Production Build
 
 - [ ] Configure Svelte for production
   - [ ] Update `vite.config.ts` for build
@@ -1080,7 +1296,7 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
   - [ ] Use `aiohttp` static file serving
   - [ ] Combine with WebSocket server
 
-### Phase 8b: Standalone Launcher
+### Phase 9b: Standalone Launcher
 
 - [ ] Create unified launcher script
   - [ ] Start WebSocket server
@@ -1097,7 +1313,7 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
   - [ ] Verify browser opens
   - [ ] Check all features work
 
-### Phase 8c: Packaging (Optional)
+### Phase 9c: Packaging (Optional)
 
 - [ ] Create installation script
   - [ ] Install Python dependencies
