@@ -5,6 +5,9 @@ Learn how to extend VimAbl with custom commands, keybindings, and modules.
 !!! info "Coming Soon"
     This page will be fully documented in the next release. For now, see the source code examples below.
 
+!!! note "Implementation Reference"
+    For detailed implementation tasks and roadmap, see [TODO.md](https://github.com/MarvinHauke/VimAbl/blob/main/TODO.md) in the repository root.
+
 ## Adding New Commands
 
 ### 1. Add Handler in Remote Script

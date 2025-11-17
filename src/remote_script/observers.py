@@ -276,6 +276,8 @@ class TrackObserver:
         self.sender = udp_sender
         self.debouncer = debouncer
         self.device_observers = []
+        self.clip_slot_states = {}  # (track_idx, scene_idx) -> has_clip state
+        self.clip_slot_callbacks = {}  # scene_idx -> callback function
 
         # Register listeners
         try:
@@ -311,6 +313,15 @@ class TrackObserver:
 
             # Observe initial devices
             self._observe_devices()
+
+            # Clip slots listener
+            if track.clip_slots_has_listener(self._on_clip_slots_changed):
+                track.remove_clip_slots_listener(self._on_clip_slots_changed)
+            track.add_clip_slots_listener(self._on_clip_slots_changed)
+            self.log(f"Track {track_index}: Added clip_slots listener")
+
+            # Observe initial clip slots
+            self._observe_clip_slots()
 
         except Exception as e:
             self.log(f"Track {track_index}: Error setting up track observer: {e}")
@@ -397,6 +408,76 @@ class TrackObserver:
         except Exception as e:
             self.log(f"Error handling devices change: {e}")
 
+    def _observe_clip_slots(self):
+        """Set up has_clip listeners for all clip slots on this track."""
+        try:
+            for scene_idx, clip_slot in enumerate(self.track.clip_slots):
+                # Store initial state
+                has_clip = clip_slot.has_clip
+                self.clip_slot_states[(self.track_index, scene_idx)] = has_clip
+
+                # Create and store callback
+                if scene_idx not in self.clip_slot_callbacks:
+                    self.clip_slot_callbacks[scene_idx] = self._create_clip_slot_callback(scene_idx)
+
+                callback = self.clip_slot_callbacks[scene_idx]
+
+                # Add listener for has_clip changes (remove old listener first if exists)
+                if clip_slot.has_clip_has_listener(callback):
+                    clip_slot.remove_has_clip_listener(callback)
+                clip_slot.add_has_clip_listener(callback)
+
+            self.log(f"Track {self.track_index}: Observing {len(self.track.clip_slots)} clip slots")
+        except Exception as e:
+            self.log(f"Error observing clip slots: {e}")
+
+    def _create_clip_slot_callback(self, scene_idx):
+        """Create a callback for a specific clip slot's has_clip listener."""
+        def callback():
+            self._on_clip_slot_changed(scene_idx)
+        return callback
+
+    def _on_clip_slot_changed(self, scene_idx: int):
+        """Called when a clip slot's has_clip state changes."""
+        try:
+            self.log(f"[DEBUG] _on_clip_slot_changed called for track {self.track_index}, scene {scene_idx}")
+
+            clip_slot = self.track.clip_slots[scene_idx]
+            has_clip = clip_slot.has_clip
+            old_state = self.clip_slot_states.get((self.track_index, scene_idx), False)
+
+            self.log(f"[DEBUG] has_clip={has_clip}, old_state={old_state}")
+
+            # Update state
+            self.clip_slot_states[(self.track_index, scene_idx)] = has_clip
+
+            # Determine if clip was added or removed
+            if has_clip and not old_state:
+                # Clip added
+                clip_name = clip_slot.clip.name if clip_slot.clip else "Untitled"
+                self.log(f"[DEBUG] Sending clip/added event: track={self.track_index}, scene={scene_idx}, name='{clip_name}'")
+                self.sender.send_event("/live/clip/added", self.track_index, scene_idx, clip_name)
+                self.log(f"Clip added at [{self.track_index},{scene_idx}]: '{clip_name}'")
+            elif not has_clip and old_state:
+                # Clip removed
+                self.log(f"[DEBUG] Sending clip/removed event: track={self.track_index}, scene={scene_idx}")
+                self.sender.send_event("/live/clip/removed", self.track_index, scene_idx)
+                self.log(f"Clip removed at [{self.track_index},{scene_idx}]")
+            else:
+                self.log(f"[DEBUG] No state change detected (has_clip={has_clip}, old_state={old_state})")
+
+        except Exception as e:
+            self.log(f"Error handling clip slot change at [{self.track_index},{scene_idx}]: {e}")
+
+    def _on_clip_slots_changed(self):
+        """Called when the clip_slots list itself changes (scenes added/removed)."""
+        try:
+            self.log(f"Track {self.track_index} clip_slots list changed (scenes added/removed)")
+            # Re-observe all clip slots
+            self._observe_clip_slots()
+        except Exception as e:
+            self.log(f"Error handling clip_slots change: {e}")
+
     def unregister(self):
         """Unregister all listeners."""
         try:
@@ -408,12 +489,22 @@ class TrackObserver:
                 self.track.remove_arm_listener(self._on_arm_changed)
             if self.track.devices_has_listener(self._on_devices_changed):
                 self.track.remove_devices_listener(self._on_devices_changed)
+            if self.track.clip_slots_has_listener(self._on_clip_slots_changed):
+                self.track.remove_clip_slots_listener(self._on_clip_slots_changed)
 
             # Unregister volume listener
             if self.track.mixer_device:
                 volume_param = self.track.mixer_device.volume
                 if volume_param.value_has_listener(self._on_volume_changed):
                     volume_param.remove_value_listener(self._on_volume_changed)
+
+            # Unregister clip slot listeners
+            for scene_idx, clip_slot in enumerate(self.track.clip_slots):
+                if scene_idx in self.clip_slot_callbacks:
+                    callback = self.clip_slot_callbacks[scene_idx]
+                    if clip_slot.has_clip_has_listener(callback):
+                        clip_slot.remove_has_clip_listener(callback)
+            self.clip_slot_callbacks.clear()
 
             # Unregister device observers
             for obs in self.device_observers:

@@ -12,8 +12,11 @@ This provides a programmatic interface for:
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 from ..parser import load_ableton_xml, build_ast
 from ..ast import (
@@ -368,6 +371,355 @@ class ASTServer:
         """
         if self.websocket_server and self.websocket_server.is_running():
             await self.websocket_server.broadcast_diff(diff_result)
+
+    async def process_live_event(self, event_path: str, args: list, seq_num: int, timestamp: float) -> Optional[Dict[str, Any]]:
+        """
+        Process a real-time event from Ableton Live and update the AST.
+
+        Maps OSC events to AST modifications, generates diffs, and broadcasts updates.
+
+        Args:
+            event_path: OSC event path (e.g., "/live/track/renamed")
+            args: Event arguments
+            seq_num: Sequence number from UDP
+            timestamp: Event timestamp
+
+        Returns:
+            Dictionary with processing result, or None if event was ignored
+
+        Event Types:
+            - /live/track/renamed <track_idx> <name>
+            - /live/track/mute <track_idx> <muted_bool>
+            - /live/track/arm <track_idx> <armed_bool>
+            - /live/track/volume <track_idx> <volume_float>
+            - /live/device/added <track_idx> <device_idx> <name>
+            - /live/device/deleted <track_idx> <device_idx>
+            - /live/device/param <track_idx> <device_idx> <param_id> <value>
+            - /live/scene/renamed <scene_idx> <name>
+            - /live/transport/play <is_playing_bool>
+            - /live/transport/tempo <bpm_float>
+        """
+        if not self.current_ast:
+            logger.warning(f"No AST loaded, ignoring event: {event_path}")
+            return None
+
+        try:
+            # Route event to appropriate handler
+            if event_path == "/live/track/renamed":
+                return await self._handle_track_renamed(args, seq_num)
+            elif event_path == "/live/track/mute":
+                return await self._handle_track_state(args, seq_num, "is_muted")
+            elif event_path == "/live/track/arm":
+                return await self._handle_track_state(args, seq_num, "is_armed")
+            elif event_path == "/live/track/volume":
+                return await self._handle_track_state(args, seq_num, "volume")
+            elif event_path == "/live/device/added":
+                return await self._handle_device_added(args, seq_num)
+            elif event_path == "/live/device/deleted":
+                return await self._handle_device_deleted(args, seq_num)
+            elif event_path == "/live/scene/renamed":
+                return await self._handle_scene_renamed(args, seq_num)
+            elif event_path.startswith("/live/transport/"):
+                # Transport events are lightweight, just broadcast without AST update
+                return {"type": "transport_event", "broadcast_only": True}
+            elif event_path.startswith("/live/device/param"):
+                # Parameter changes are high-frequency, broadcast only
+                return {"type": "param_event", "broadcast_only": True}
+            else:
+                logger.debug(f"Unhandled event type: {event_path}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error processing event {event_path}: {e}", exc_info=True)
+            if self.websocket_server and self.websocket_server.is_running():
+                await self.websocket_server.broadcast_error(
+                    "Event processing error",
+                    f"Failed to process {event_path}: {str(e)}"
+                )
+            return None
+
+    async def _handle_track_renamed(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle track rename event."""
+        if len(args) < 2:
+            logger.warning(f"Invalid track rename args: {args}")
+            return None
+
+        track_idx = int(args[0])
+        new_name = str(args[1])
+
+        # Find track node by index
+        track_node = self._find_track_by_index(track_idx)
+        if not track_node:
+            logger.warning(f"Track {track_idx} not found in AST")
+            return None
+
+        # Store old name for diff
+        old_name = track_node.attributes.get('name', '')
+
+        # Update track name
+        track_node.attributes['name'] = new_name
+
+        # Recompute hash for track and its parents
+        hash_tree(track_node)
+        self._recompute_parent_hashes(track_node)
+
+        # Generate minimal diff
+        diff_result = {
+            'changes': [{
+                'type': 'modified',
+                'node_id': track_node.node_id,
+                'node_type': 'track',
+                'path': f"tracks[{track_idx}]",
+                'old_value': {'name': old_name},
+                'new_value': {'name': new_name},
+                'seq_num': seq_num
+            }],
+            'added': [],
+            'removed': [],
+            'modified': [track_node.node_id]
+        }
+
+        # Broadcast diff
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+
+        logger.info(f"Track {track_idx} renamed: '{old_name}' → '{new_name}'")
+        return {"type": "track_renamed", "track_idx": track_idx, "name": new_name}
+
+    async def _handle_track_state(self, args: list, seq_num: int, attribute: str) -> Dict[str, Any]:
+        """Handle track state change (mute, arm, volume, etc.)."""
+        if len(args) < 2:
+            logger.warning(f"Invalid track state args: {args}")
+            return None
+
+        track_idx = int(args[0])
+        value = args[1]
+
+        # Find track node
+        track_node = self._find_track_by_index(track_idx)
+        if not track_node:
+            logger.warning(f"Track {track_idx} not found in AST")
+            return None
+
+        # Store old value
+        old_value = track_node.attributes.get(attribute)
+
+        # Update attribute (lightweight, no rehash for state changes)
+        track_node.attributes[attribute] = value
+
+        # Generate minimal diff
+        diff_result = {
+            'changes': [{
+                'type': 'state_changed',
+                'node_id': track_node.node_id,
+                'node_type': 'track',
+                'path': f"tracks[{track_idx}]",
+                'attribute': attribute,
+                'old_value': old_value,
+                'new_value': value,
+                'seq_num': seq_num
+            }],
+            'added': [],
+            'removed': [],
+            'modified': [track_node.node_id]
+        }
+
+        # Broadcast diff
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+
+        logger.info(f"Track {track_idx} {attribute} changed: {old_value} → {value}")
+        return {"type": "track_state", "track_idx": track_idx, "attribute": attribute, "value": value}
+
+    async def _handle_device_added(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle device added event."""
+        if len(args) < 3:
+            logger.warning(f"Invalid device added args: {args}")
+            return None
+
+        track_idx = int(args[0])
+        device_idx = int(args[1])
+        device_name = str(args[2])
+
+        # Find track node
+        track_node = self._find_track_by_index(track_idx)
+        if not track_node:
+            logger.warning(f"Track {track_idx} not found in AST")
+            return None
+
+        # Create new device node
+        new_device = DeviceNode(
+            name=device_name,
+            device_type='unknown',  # We don't know the type from UDP event
+            node_id=f"device_{track_idx}_{device_idx}_{seq_num}"
+        )
+
+        # Insert device at the specified index
+        # Find devices container or create if needed
+        devices_list = track_node.children  # Devices are typically direct children
+        if device_idx <= len(devices_list):
+            devices_list.insert(device_idx, new_device)
+        else:
+            devices_list.append(new_device)
+
+        # Recompute hashes
+        hash_tree(track_node)
+        self._recompute_parent_hashes(track_node)
+
+        # Generate diff
+        diff_result = {
+            'changes': [{
+                'type': 'added',
+                'node_id': new_device.node_id,
+                'node_type': 'device',
+                'parent_id': track_node.node_id,
+                'path': f"tracks[{track_idx}].devices[{device_idx}]",
+                'value': {'name': device_name},
+                'seq_num': seq_num
+            }],
+            'added': [new_device.node_id],
+            'removed': [],
+            'modified': []
+        }
+
+        # Broadcast diff
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+
+        logger.info(f"Device added to track {track_idx} at index {device_idx}: {device_name}")
+        return {"type": "device_added", "track_idx": track_idx, "device_idx": device_idx, "name": device_name}
+
+    async def _handle_device_deleted(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle device deleted event."""
+        if len(args) < 2:
+            logger.warning(f"Invalid device deleted args: {args}")
+            return None
+
+        track_idx = int(args[0])
+        device_idx = int(args[1])
+
+        # Find track node
+        track_node = self._find_track_by_index(track_idx)
+        if not track_node:
+            logger.warning(f"Track {track_idx} not found in AST")
+            return None
+
+        # Find and remove device
+        devices_list = track_node.children
+        if device_idx < len(devices_list):
+            removed_device = devices_list.pop(device_idx)
+            
+            # Recompute hashes
+            hash_tree(track_node)
+            self._recompute_parent_hashes(track_node)
+
+            # Generate diff
+            diff_result = {
+                'changes': [{
+                    'type': 'removed',
+                    'node_id': removed_device.node_id,
+                    'node_type': 'device',
+                    'parent_id': track_node.node_id,
+                    'path': f"tracks[{track_idx}].devices[{device_idx}]",
+                    'value': {'name': removed_device.attributes.get('name', 'unknown')},
+                    'seq_num': seq_num
+                }],
+                'added': [],
+                'removed': [removed_device.node_id],
+                'modified': []
+            }
+
+            # Broadcast diff
+            if self.websocket_server and self.websocket_server.is_running():
+                await self.websocket_server.broadcast_diff(diff_result)
+
+            logger.info(f"Device removed from track {track_idx} at index {device_idx}")
+            return {"type": "device_deleted", "track_idx": track_idx, "device_idx": device_idx}
+        else:
+            logger.warning(f"Device index {device_idx} out of range for track {track_idx}")
+            return None
+
+    async def _handle_scene_renamed(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle scene rename event."""
+        if len(args) < 2:
+            logger.warning(f"Invalid scene rename args: {args}")
+            return None
+
+        scene_idx = int(args[0])
+        new_name = str(args[1])
+
+        # Find scene node by index
+        scene_node = self._find_scene_by_index(scene_idx)
+        if not scene_node:
+            logger.warning(f"Scene {scene_idx} not found in AST")
+            return None
+
+        # Store old name
+        old_name = scene_node.attributes.get('name', '')
+
+        # Update scene name
+        scene_node.attributes['name'] = new_name
+
+        # Recompute hash
+        hash_tree(scene_node)
+        self._recompute_parent_hashes(scene_node)
+
+        # Generate diff
+        diff_result = {
+            'changes': [{
+                'type': 'modified',
+                'node_id': scene_node.node_id,
+                'node_type': 'scene',
+                'path': f"scenes[{scene_idx}]",
+                'old_value': {'name': old_name},
+                'new_value': {'name': new_name},
+                'seq_num': seq_num
+            }],
+            'added': [],
+            'removed': [],
+            'modified': [scene_node.node_id]
+        }
+
+        # Broadcast diff
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+
+        logger.info(f"Scene {scene_idx} renamed: '{old_name}' → '{new_name}'")
+        return {"type": "scene_renamed", "scene_idx": scene_idx, "name": new_name}
+
+    def _find_track_by_index(self, index: int) -> Optional[TrackNode]:
+        """Find a track node by its index."""
+        if not self.current_ast:
+            return None
+
+        # Tracks are typically direct children of the project node
+        tracks = [child for child in self.current_ast.children if child.node_type == NodeType.TRACK]
+        
+        for track in tracks:
+            if track.attributes.get('index') == index:
+                return track
+        
+        return None
+
+    def _find_scene_by_index(self, index: int) -> Optional[SceneNode]:
+        """Find a scene node by its index."""
+        if not self.current_ast:
+            return None
+
+        # Scenes are typically direct children of the project node
+        scenes = [child for child in self.current_ast.children if child.node_type == NodeType.SCENE]
+        
+        if index < len(scenes):
+            return scenes[index]
+        
+        return None
+
+    def _recompute_parent_hashes(self, node: ASTNode) -> None:
+        """Recompute hashes for all parent nodes up to the root."""
+        # Note: This assumes nodes have a parent reference or we traverse from root
+        # Since our current AST doesn't have parent pointers, we rehash from root
+        if self.current_ast:
+            hash_tree(self.current_ast)
 
     def get_websocket_status(self) -> Dict[str, Any]:
         """

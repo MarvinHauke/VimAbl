@@ -29,25 +29,22 @@
 					astStore.setAST(fullMessage.payload.ast, fullMessage.payload.project_path);
 					console.log('[WebSocket] Loaded full AST');
 				} else if (message.type === 'DIFF_UPDATE') {
-					// Apply incremental diff from XML file save
+					// Apply incremental diff from both XML file saves and real-time events
 					const diffMessage = message as any;
-					if (diffMessage.payload?.diff) {
-						const diff = diffMessage.payload.diff;
-						// Combine all change types into a single array
-						const changes = [
-							...(diff.added || []),
-							...(diff.removed || []),
-							...(diff.modified || [])
-						];
-						console.log(`[WebSocket] Applying diff with ${changes.length} changes`);
-						console.log('[WebSocket] Diff payload:', diffMessage.payload);
-						astStore.applyDiff(changes);
+					console.log('[WebSocket] Received DIFF_UPDATE:', diffMessage.payload);
+
+					// New backend format has a 'changes' array with structured change objects
+					if (diffMessage.payload) {
+						astStore.applyDiff(diffMessage.payload);
 					}
 				} else if (message.type === 'live_event') {
 					// Apply real-time UDP event to AST or cursor
 					const liveEvent = message as LiveEventMessage;
 					const eventPath = liveEvent.payload.event_path;
 					const args = liveEvent.payload.args;
+
+					// Update sequence number tracking for ALL events (prevents gap warnings)
+					astStore.updateSequenceNumber(liveEvent.payload.seq_num);
 
 					// Check if this is a cursor event
 					if (eventPath.startsWith('/live/cursor/')) {
@@ -58,11 +55,13 @@
 						// (important for master track which may not have name in XML)
 						if (eventPath === '/live/cursor/track' && args.length >= 3 && args[2]) {
 							// Update track name in AST if provided by Live API
-							astStore.applyLiveEvent('/live/track/renamed', [args[0], args[2]], liveEvent.payload.seq_num);
+							// Note: seq num already updated above, so pass 0 to skip duplicate tracking
+							astStore.applyLiveEvent('/live/track/renamed', [args[0], args[2]], 0);
 						}
 					} else {
 						// Handle AST update event
-						astStore.applyLiveEvent(eventPath, args, liveEvent.payload.seq_num);
+						// Note: seq num already updated above, so pass 0 to skip duplicate tracking
+						astStore.applyLiveEvent(eventPath, args, 0);
 					}
 
 					console.log(

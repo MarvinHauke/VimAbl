@@ -319,21 +319,67 @@ python3 tools/test_udp_manual.py
 ### Server Integration
 - `src/main.py:101-143` - `udp_event_callback()` broadcasts UDP events to WebSocket clients
 
+## Visual Change Indicators - FIXED ✅
+
+**Previous Issue**: Green/yellow/red highlighting was only working for DIFF_UPDATE messages (XML file saves), not for real-time UDP events.
+
+**Root Cause**: The `applyDiff()` function was setting `_changeType` markers, but `applyLiveEvent()` → `ASTUpdater` was not setting these markers.
+
+**Fix Applied** (2025-11-17):
+Updated `ast-updater.ts` to set `_changeType` markers for all mutations:
+
+1. **updateTrackName()**: Sets `_changeType = 'modified'` with 5s timer
+2. **updateTrackColor()**: Sets `_changeType = 'modified'` with 5s timer
+3. **addDevice()**: Sets `_changeType = 'added'` with 5s timer
+4. **removeDevice()**: Sets `_changeType = 'removed'`, removes after 500ms animation
+
+Now both update paths (DIFF_UPDATE and live_event) trigger visual indicators:
+- 🟢 Green: Device added (5 seconds)
+- 🟡 Yellow: Track renamed or color changed (5 seconds)
+- 🔴 Red: Device removed (500ms animation then delete)
+- 🔵 Blue flash: General attribute changes (600ms)
+
+## Documentation Updates ✅
+
+**Files Updated** (2025-11-17):
+
+1. **docs/user-guide/web-treeviewer.md** - Complete user guide with:
+   - Real-time update features
+   - Visual change indicators (color-coded table)
+   - Connection status
+   - Cursor tracking
+   - Event types
+   - Architecture diagrams
+   - Troubleshooting guide
+   - Browser compatibility
+   - Technical details
+
+2. **docs/architecture/websocket-ast.md** - Comprehensive architecture documentation with:
+   - System architecture diagram
+   - Core component descriptions
+   - Message formats
+   - Data flow scenarios (5 scenarios)
+   - Performance optimizations
+   - Sequence number tracking
+   - Error handling
+   - Future enhancements
+
 ## Known Limitations
 
 ### 1. Structural Changes Not Fully Supported
 
 **Implemented**: ✅
-- Track rename, mute, arm, volume
+- Track rename, mute, arm, volume, color
 - Transport tempo, play state
+- Device add/delete ✅ (newly implemented)
 - Device parameter changes
 
 **Not Implemented**: ⚠️
-- Track add/delete (requires AST restructuring)
-- Device add/delete (requires AST restructuring)
+- Track add/delete (requires AST restructuring and index updates)
 - Clip add/delete/trigger
+- Scene add/delete
 
-**Fallback**: When structural changes occur, the XMLFileWatcher will reload the full AST when the user saves the project.
+**Fallback**: When track add/delete occurs, the XMLFileWatcher will reload the full AST when the user saves the project.
 
 ### 2. Gap Detection
 

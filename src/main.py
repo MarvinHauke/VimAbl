@@ -124,19 +124,39 @@ async def run_websocket_server(path: Path, host: str, port: int, use_signals: bo
 
             logger.info(f"[UDP Event #{seq_num}] {event_path} {args}")
 
-            # Broadcast the event to WebSocket clients
-            if server.websocket_server and server.websocket_server.is_running():
-                # Create a real-time event message (match TypeScript LiveEventMessage structure)
-                event_message = {
-                    'type': 'live_event',
-                    'payload': {
-                        'event_path': event_path,
-                        'args': args,
-                        'seq_num': seq_num,
-                        'timestamp': timestamp
+            # Route event based on type
+            if event_path.startswith('/live/cursor/'):
+                # Cursor events: broadcast directly to UI (no AST update)
+                if server.websocket_server and server.websocket_server.is_running():
+                    event_message = {
+                        'type': 'live_event',
+                        'payload': {
+                            'event_path': event_path,
+                            'args': args,
+                            'seq_num': seq_num,
+                            'timestamp': timestamp
+                        }
                     }
-                }
-                await server.websocket_server.broadcaster.broadcast(event_message)
+                    await server.websocket_server.broadcaster.broadcast(event_message)
+                    logger.debug(f"[UDP] Cursor event broadcasted: {event_path}")
+            else:
+                # AST events: process and update AST
+                result = await server.process_live_event(event_path, args, seq_num, timestamp)
+
+                # If event requires broadcast-only (no AST update), send raw event
+                if result and result.get('broadcast_only'):
+                    if server.websocket_server and server.websocket_server.is_running():
+                        # Create a real-time event message (for transport/params)
+                        event_message = {
+                            'type': 'live_event',
+                            'payload': {
+                                'event_path': event_path,
+                                'args': args,
+                                'seq_num': seq_num,
+                                'timestamp': timestamp
+                            }
+                        }
+                        await server.websocket_server.broadcaster.broadcast(event_message)
 
         except Exception as e:
             logger.error(f"Error handling UDP event: {e}")
