@@ -1,39 +1,81 @@
-site_name: Documentation for Vimabl
-site_url: https://sitename.example
+site_name: VimAbl Documentation
+site_url: https://vimabl.dev
+site_description: Vim-like keybindings and LSP-style server for Ableton Live
+site_author: VimAbl Contributors
+repo_url: https://github.com/yourusername/VimAbl
+repo_name: VimAbl
+edit_uri: edit/main/docs/
 
 theme:
   name: material
   font:
     text: Inter
+    code: JetBrains Mono
   logo: assets/logo.png
   favicon: assets/favicon.ico
 
   features:
+    # Navigation
     - navigation.footer
-    - content.code.copy
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    # Search
+    - search.suggest
+    - search.highlight
+    - search.share
+    # Content
+    - content.code.copy
+    - content.code.annotate
     - content.action.edit
+    - content.action.view
+    - content.tabs.link
+    # Table of contents
+    - toc.follow
+    - toc.integrate
 
   palette:
     # --- Ableton Dark Mode ---
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       primary: grey
       accent: lime # neon accent (Ableton style)
       toggle:
         icon: material/weather-sunny
-        name: "Dark mode"
+        name: Switch to light mode
 
     # --- Ableton Light Mode ---
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       primary: grey
       accent: yellow # Ableton-style contrast
       toggle:
         icon: material/weather-night
-        name: "Light mode"
+        name: Switch to dark mode
 
 markdown_extensions:
+  # Python Markdown
+  - abbr
+  - admonition
   - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+  # PyMdown Extensions
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -42,10 +84,69 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
-  - pymdownx.superfences
-  - admonition
-  - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.tasklist:
       custom_checkbox: true
+  - pymdownx.tilde
+
+plugins:
+  - search:
+      lang: en
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourusername/VimAbl
+      name: VimAbl on GitHub
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: Thanks for your feedback! Help us improve by using the Edit button.
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: installation.md
+      - Quick Start: quick-start.md
+  - User Guide:
+      - user-guide/overview.md
+      - Navigation: user-guide/navigation.md
+      - Editing: user-guide/editing.md
+      - Session vs Arrangement: user-guide/session-vs-arrangement.md
+      - Keybindings Reference: user-guide/keybindings.md
+      - UDP/OSC Observers: user-guide/udp-observers.md
+  - Architecture:
+      - architecture/overview.md
+  - API Reference:
+      - Commands: api-reference/commands.md
+      - OSC Protocol: api-reference/osc-protocol.md
+  - Development:
+      - Extending VimAbl: development/extending.md
+  - Planned Features: planned-features.md
+  - Troubleshooting: troubleshooting.md
+  - FAQ: faq.md
+  - Changelog: changelog.md
