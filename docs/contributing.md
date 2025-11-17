@@ -34,7 +34,7 @@ Automatically builds and deploys MkDocs documentation.
 
 ## Setup
 
-See [SETUP_GITHUB_PAGES.md](./SETUP_GITHUB_PAGES.md) for detailed setup instructions.
+See [SETUP_GITHUB_PAGES.md](./development/setup_github_pages.md) for detailed setup instructions.
 
 **Quick setup:**
 
