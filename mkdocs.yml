@@ -1,9 +1,9 @@
 site_name: VimAbl Documentation
-site_url: https://vimabl.dev
+site_url: https://marvinhauke.github.io/VimAbl/
 site_description: Vim-like keybindings and LSP-style server for Ableton Live
 site_author: VimAbl Contributors
-repo_url: https://github.com/yourusername/VimAbl
-repo_name: VimAbl
+repo_url: https://github.com/MarvinHauke/VimAbl
+repo_name: MarvinHauke/VimAbl
 edit_uri: edit/main/docs/
 
 theme:
@@ -112,7 +112,7 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/yourusername/VimAbl
+      link: https://github.com/MarvinHauke/VimAbl
       name: VimAbl on GitHub
   analytics:
     feedback:
@@ -139,10 +139,16 @@ nav:
       - Session vs Arrangement: user-guide/session-vs-arrangement.md
       - Keybindings Reference: user-guide/keybindings.md
       - UDP/OSC Observers: user-guide/udp-observers.md
+      - Web TreeViewer: user-guide/web-treeviewer.md
   - Architecture:
       - architecture/overview.md
+      - WebSocket AST: architecture/websocket-ast.md
+      - Data Flow: architecture/data-flow.md
+      - Hammerspoon Integration: architecture/hammerspoon-integration.md
+      - Python Remote Script: architecture/python-remote-script.md
   - API Reference:
       - Commands: api-reference/commands.md
+      - Lua API: api-reference/lua-api.md
       - OSC Protocol: api-reference/osc-protocol.md
   - Development:
       - Extending VimAbl: development/extending.md

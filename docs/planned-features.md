@@ -2,6 +2,9 @@
 
 This page outlines planned features, upcoming improvements, and the development roadmap for VimAbl.
 
+!!! tip "Detailed Implementation Checklist"
+    For granular implementation details and phase-by-phase tasks, see the [TODO.md](https://github.com/MarvinHauke/VimAbl/blob/main/TODO.md) in the repository root.
+
 ## Current Status
 
 **Phase Complete:** Phase 5f - UDP/OSC Real-Time Observers ✅
