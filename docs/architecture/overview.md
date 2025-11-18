@@ -259,3 +259,4 @@ Symlinks enable rapid iteration during development.
 - [Hammerspoon Integration](hammerspoon-integration.md) - Lua automation details
 - [WebSocket AST](websocket-ast.md) - AST server and UI
 - [Data Flow](data-flow.md) - Detailed data flow diagrams
+- [ClipSlot Implementation](clipslot-implementation.md) - ClipSlot matrix architecture

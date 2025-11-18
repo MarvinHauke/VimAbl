@@ -1,7 +1,7 @@
 from .file_refs import extract_file_refs
 from .tracks import extract_tracks
 from .devices import extract_devices
-from .clips import extract_clips
+from .clips import extract_clips, extract_clip_slots
 from .scenes import extract_scenes
 from .mixer import extract_mixer_from_track
 
@@ -16,6 +16,10 @@ def build_ast(root):
     Returns:
         Dictionary with tracks, scenes, file_refs, and enriched track data
     """
+    # Extract scenes FIRST to get the total number of scenes
+    scenes = extract_scenes(root)
+    num_scenes = len(scenes)
+
     # Extract basic track information (includes regular and return tracks from <Tracks>, plus master)
     tracks = extract_tracks(root)
 
@@ -31,8 +35,14 @@ def build_ast(root):
             devices = extract_devices(track_elem)
             tracks[i]['devices'] = devices
 
-            # Extract clips only for non-return tracks
+            # Extract clip slots and clips only for non-return tracks
             if tracks[i]['type'] != 'return':
+                # Extract clip slots (all slots: empty and filled)
+                # Pass num_scenes to ensure we get all slots, even empty ones
+                clip_slots = extract_clip_slots(track_elem, num_scenes)
+                tracks[i]['clip_slots'] = clip_slots
+
+                # Also keep legacy clips array for backward compatibility (for now)
                 clips = extract_clips(track_elem)
                 tracks[i]['clips'] = clips
 
@@ -50,9 +60,6 @@ def build_ast(root):
             mixer = extract_mixer_from_track(master_track_element)
             tracks[master_idx]['mixer'] = mixer
             # Master track doesn't have clips
-
-    # Extract scenes
-    scenes = extract_scenes(root)
 
     return {
         "tracks": tracks,

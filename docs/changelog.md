@@ -8,15 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ClipSlot Matrix Implementation (Phase 6)**
+  - Full ClipSlot grid representation in AST (track × scene matrix)
+  - CLIP_SLOT node type with empty and filled slot support
+  - Real-time ClipSlot observers for all properties:
+    - `has_clip` - Detect clip add/remove
+    - `has_stop_button` - Detect stop button enable/disable
+    - `playing_status` - Track stopped/playing/triggered states (0/1/2)
+    - `color` - Slot color changes
+  - Real-time Clip observers when slot has clip:
+    - `name` - Detect clip renames
+    - `color` - Clip color changes
+    - `muted` - Clip mute state
+    - `looping` - Loop enable/disable
+  - Web UI visualization with icons and states:
+    - ▶ Playing (green)
+    - ⏸ Triggered/blinking (orange, animated)
+    - ■ Stopped (gray)
+    - □ Empty slot (light gray)
+    - ⊗ No stop button (red)
+  - XML parser extracts all clip slots (including empty ones)
+  - Backward compatibility maintained with legacy clips array
 - Complete MkDocs documentation site
 - User guide with navigation and editing commands
 - Architecture documentation with Mermaid diagrams
-- API reference for OSC protocol
+- API reference for OSC protocol and observable properties
 - Troubleshooting guide and FAQ
+- GitHub Pages deployment workflow with auto-generated documentation
 
 ### Changed
 - Reorganized documentation structure
 - Updated mkdocs.yml with comprehensive navigation
+- Enhanced AST updater with ClipSlot event handlers
+- Simplified web UI visual effects - removed add/modify/delete animations
+- Unified selection highlighting to blue for both tracks and clip slots
+- Immediate DOM updates (no animation delays) for better performance
+
+### Fixed
+- XPath selector bug causing double-counting of clip slots (`.//ClipSlot` → `./ClipSlot`)
+- Clip slot selection now uses consistent blue highlight matching track selection
 
 ## [0.3.0] - 2025-11-16
 

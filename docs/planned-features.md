@@ -14,9 +14,36 @@ This page outlines planned features, upcoming improvements, and the development 
 
 ## High Priority Features
 
-### Phase 3: Real-Time Updates & Diff Visualization
+### Phase 6: ClipSlot Matrix Implementation
 
 **Status:** In Progress
+**Dependencies:** Phase 5f (Complete)
+**Priority:** HIGH
+
+**Goal:** Implement full ClipSlot matrix representation in AST and real-time observation of clip/slot properties
+
+For detailed implementation plan, see [ClipSlot Implementation Architecture](architecture/clipslot-implementation.md)
+
+**Overview:**
+- Add ClipSlotNode type to AST (tracks × scenes grid)
+- Parse all clip slots from XML (empty and filled)
+- Real-time observation of slot and clip properties
+- Web UI visualization with playback states
+
+**Key Features:**
+- ✅ Empty clip slot representation
+- ✅ Stop button state tracking
+- ✅ Real-time playback status (stopped/playing/triggered)
+- ✅ Clip name and property changes
+- ✅ Cursor highlighting for clip slots
+
+**Estimated Time:** 8-9 hours (6 sub-phases)
+
+---
+
+### Phase 3: Real-Time Updates & Diff Visualization
+
+**Status:** Planned
 **Dependencies:** WebSocket AST Server (Complete)
 
 #### Phase 3a: Diff Application Logic

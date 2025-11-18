@@ -16,6 +16,7 @@ class NodeType(Enum):
     TRACK = "track"
     DEVICE = "device"
     CLIP = "clip"
+    CLIP_SLOT = "clip_slot"
     FILE_REF = "file_ref"
     SCENE = "scene"
     MIXER = "mixer"
@@ -96,6 +97,23 @@ class DeviceNode(ASTNode):
         self.attributes['name'] = name
         self.attributes['device_type'] = device_type  # 'audio_effect', 'midi_effect', 'instrument'
         self.attributes['is_enabled'] = True
+
+
+@dataclass
+class ClipSlotNode(ASTNode):
+    """Node representing a clip slot in the session view (track × scene grid)."""
+
+    def __init__(self, track_index: int, scene_index: int, **kwargs):
+        super().__init__(node_type=NodeType.CLIP_SLOT, **kwargs)
+        self.attributes['track_index'] = track_index
+        self.attributes['scene_index'] = scene_index
+        self.attributes['has_clip'] = False
+        self.attributes['has_stop_button'] = True
+        self.attributes['playing_status'] = 0  # 0=stopped, 1=playing, 2=triggered
+        self.attributes['color'] = None
+        # Derived properties for convenience
+        self.attributes['is_playing'] = False
+        self.attributes['is_triggered'] = False
 
 
 @dataclass

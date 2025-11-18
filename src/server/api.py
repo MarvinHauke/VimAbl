@@ -25,6 +25,7 @@ from ..ast import (
     ProjectNode,
     TrackNode,
     DeviceNode,
+    ClipSlotNode,
     ClipNode,
     FileRefNode,
     SceneNode,
@@ -105,7 +106,7 @@ class ASTServer:
         """
         project = ProjectNode(id="project")
 
-        # Add tracks with devices and clips
+        # Add tracks with devices, clip slots, and clips
         for track_data in raw_ast.get("tracks", []):
             track_node = TrackNode(
                 name=track_data["name"],
@@ -134,31 +135,48 @@ class ASTServer:
 
                 track_node.add_child(device_node)
 
-            # Add clips to track
-            for clip_idx, clip_data in enumerate(track_data.get("clips", [])):
-                clip_node = ClipNode(
-                    name=clip_data.get("name", "Untitled"),
-                    clip_type=clip_data.get("type", "midi"),
-                    id=f"clip_{track_data['index']}_{clip_idx}"
+            # Add clip slots to track (NEW: replaces old clip handling)
+            for slot_data in track_data.get("clip_slots", []):
+                scene_idx = slot_data["scene_index"]
+                clip_slot_node = ClipSlotNode(
+                    track_index=track_data["index"],
+                    scene_index=scene_idx,
+                    id=f"clip_slot_{track_data['index']}_{scene_idx}"
                 )
-                clip_node.attributes['start_time'] = clip_data.get("start_time", 0.0)
-                clip_node.attributes['end_time'] = clip_data.get("end_time", 0.0)
-                clip_node.attributes['loop_start'] = clip_data.get("loop_start", 0.0)
-                clip_node.attributes['loop_end'] = clip_data.get("loop_end", 0.0)
-                clip_node.attributes['is_looped'] = clip_data.get("is_looped", True)
-                clip_node.attributes['color'] = clip_data.get("color", -1)
-                clip_node.attributes['view'] = clip_data.get("view", "session")
+                
+                # Set clip slot properties
+                clip_slot_node.attributes['has_clip'] = slot_data.get("has_clip", False)
+                clip_slot_node.attributes['has_stop_button'] = slot_data.get("has_stop_button", True)
+                clip_slot_node.attributes['color'] = slot_data.get("color")
+                
+                # If slot has a clip, add it as a child of the clip slot
+                if slot_data.get("has_clip") and slot_data.get("clip"):
+                    clip_data = slot_data["clip"]
+                    clip_node = ClipNode(
+                        name=clip_data.get("name", "Untitled"),
+                        clip_type=clip_data.get("type", "midi"),
+                        id=f"clip_{track_data['index']}_{scene_idx}"
+                    )
+                    clip_node.attributes['start_time'] = clip_data.get("start_time", 0.0)
+                    clip_node.attributes['end_time'] = clip_data.get("end_time", 0.0)
+                    clip_node.attributes['loop_start'] = clip_data.get("loop_start", 0.0)
+                    clip_node.attributes['loop_end'] = clip_data.get("loop_end", 0.0)
+                    clip_node.attributes['is_looped'] = clip_data.get("is_looped", True)
+                    clip_node.attributes['color'] = clip_data.get("color", -1)
+                    clip_node.attributes['view'] = clip_data.get("view", "session")
 
-                # Add type-specific attributes
-                if clip_data.get("type") == "midi":
-                    clip_node.attributes['note_count'] = clip_data.get("note_count", 0)
-                    clip_node.attributes['has_notes'] = clip_data.get("has_notes", False)
-                elif clip_data.get("type") == "audio":
-                    clip_node.attributes['sample_name'] = clip_data.get("sample_name", "")
-                    clip_node.attributes['is_warped'] = clip_data.get("is_warped", False)
-                    clip_node.attributes['warp_mode'] = clip_data.get("warp_mode", "Unknown")
+                    # Add type-specific attributes
+                    if clip_data.get("type") == "midi":
+                        clip_node.attributes['note_count'] = clip_data.get("note_count", 0)
+                        clip_node.attributes['has_notes'] = clip_data.get("has_notes", False)
+                    elif clip_data.get("type") == "audio":
+                        clip_node.attributes['sample_name'] = clip_data.get("sample_name", "")
+                        clip_node.attributes['is_warped'] = clip_data.get("is_warped", False)
+                        clip_node.attributes['warp_mode'] = clip_data.get("warp_mode", "Unknown")
 
-                track_node.add_child(clip_node)
+                    clip_slot_node.add_child(clip_node)
+
+                track_node.add_child(clip_slot_node)
 
             # Add mixer settings to track
             mixer_data = track_data.get("mixer")

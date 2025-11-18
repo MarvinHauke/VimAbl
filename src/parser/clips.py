@@ -6,8 +6,61 @@ Clips include:
 - Audio clips (file references, warp settings)
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import xml.etree.ElementTree as ET
+
+
+def extract_clip_slots(track_elem: ET.Element, num_scenes: int) -> List[Dict[str, Any]]:
+    """
+    Extract all clip slots from a track element (both empty and filled).
+
+    Args:
+        track_elem: XML element representing a track (MidiTrack, AudioTrack, etc.)
+        num_scenes: Total number of scenes in the project (to ensure we create all slots)
+
+    Returns:
+        List of clip slot dictionaries with:
+        - scene_index: Position in the scene list
+        - has_clip: Whether this slot contains a clip
+        - has_stop_button: Whether stop button is enabled
+        - clip: Clip data (if has_clip=True), None otherwise
+    """
+    clip_slots = []
+
+    # Find ClipSlotList (session view clips)
+    clip_slot_list = track_elem.find('.//ClipSlotList')
+    if clip_slot_list is not None:
+        # Use ./ClipSlot to get ONLY immediate children (not nested ClipSlot elements)
+        # .// would recursively find nested ClipSlots and count them twice!
+        xml_clip_slots = clip_slot_list.findall('./ClipSlot')
+        
+        for scene_index in range(num_scenes):
+            if scene_index < len(xml_clip_slots):
+                # Use slot from XML
+                slot_info = _extract_clip_slot_info(xml_clip_slots[scene_index], scene_index)
+            else:
+                # Create empty slot if XML doesn't have enough
+                slot_info = {
+                    'scene_index': scene_index,
+                    'has_clip': False,
+                    'has_stop_button': True,
+                    'color': None,
+                    'clip': None
+                }
+            clip_slots.append(slot_info)
+    else:
+        # No ClipSlotList found, create all empty slots
+        for scene_index in range(num_scenes):
+            empty_slot = {
+                'scene_index': scene_index,
+                'has_clip': False,
+                'has_stop_button': True,
+                'color': None,
+                'clip': None
+            }
+            clip_slots.append(empty_slot)
+
+    return clip_slots
 
 
 def extract_clips(track_elem: ET.Element) -> List[Dict[str, Any]]:
@@ -41,6 +94,67 @@ def extract_clips(track_elem: ET.Element) -> List[Dict[str, Any]]:
                     clips.append(clip_info)
 
     return clips
+
+
+def _extract_clip_slot_info(clip_slot: ET.Element, scene_index: int) -> Dict[str, Any]:
+    """
+    Extract information from a ClipSlot element (both empty and filled).
+
+    Args:
+        clip_slot: XML element representing a clip slot
+        scene_index: Position in the scene list (0-based)
+
+    Returns:
+        Dictionary with clip slot information including:
+        - scene_index: Position in scene list
+        - has_clip: Boolean indicating if slot contains a clip
+        - has_stop_button: Boolean indicating if stop button is enabled
+        - color: Slot color (if available)
+        - clip: Clip data dictionary (if has_clip=True), None otherwise
+    """
+    # Get ClipSlot element (may be nested)
+    clip_slot_elem = clip_slot.find('./ClipSlot')
+    if clip_slot_elem is None:
+        clip_slot_elem = clip_slot
+
+    # Check HasStop property (default is true if not specified)
+    has_stop_elem = clip_slot_elem.find('./HasStop')
+    has_stop_button = True  # Default value
+    if has_stop_elem is not None:
+        has_stop_button = has_stop_elem.get('Value', 'true') == 'true'
+
+    # Get slot color (if available)
+    color_elem = clip_slot_elem.find('./Color')
+    color = int(color_elem.get('Value', '-1')) if color_elem is not None else None
+
+    # Check if the slot has a clip
+    value_elem = clip_slot_elem.find('./Value')
+    has_clip = False
+    clip_data = None
+
+    if value_elem is not None and len(value_elem) > 0:
+        # Get the clip element (MidiClip or AudioClip)
+        clip_elem = None
+        for child in value_elem:
+            if child.tag in ['MidiClip', 'AudioClip']:
+                clip_elem = child
+                break
+
+        if clip_elem is not None:
+            has_clip = True
+            clip_data = _extract_clip_info(clip_elem)
+            if clip_data:
+                clip_data['view'] = 'session'
+
+    slot_info = {
+        'scene_index': scene_index,
+        'has_clip': has_clip,
+        'has_stop_button': has_stop_button,
+        'color': color,
+        'clip': clip_data
+    }
+
+    return slot_info
 
 
 def _extract_clip_from_slot(clip_slot: ET.Element) -> Optional[Dict[str, Any]]:

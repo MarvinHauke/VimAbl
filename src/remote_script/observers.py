@@ -409,23 +409,50 @@ class TrackObserver:
             self.log(f"Error handling devices change: {e}")
 
     def _observe_clip_slots(self):
-        """Set up has_clip listeners for all clip slots on this track."""
+        """Set up listeners for all clip slots on this track."""
         try:
             for scene_idx, clip_slot in enumerate(self.track.clip_slots):
                 # Store initial state
                 has_clip = clip_slot.has_clip
-                self.clip_slot_states[(self.track_index, scene_idx)] = has_clip
+                self.clip_slot_states[(self.track_index, scene_idx)] = {
+                    'has_clip': has_clip,
+                    'has_stop_button': clip_slot.has_stop_button,
+                    'playing_status': clip_slot.playing_status,
+                    'color': clip_slot.color if hasattr(clip_slot, 'color') else None
+                }
 
-                # Create and store callback
+                # Create callbacks for this slot
                 if scene_idx not in self.clip_slot_callbacks:
-                    self.clip_slot_callbacks[scene_idx] = self._create_clip_slot_callback(scene_idx)
+                    self.clip_slot_callbacks[scene_idx] = {
+                        'has_clip': self._create_has_clip_callback(scene_idx),
+                        'has_stop_button': self._create_has_stop_callback(scene_idx),
+                        'playing_status': self._create_playing_status_callback(scene_idx),
+                        'color': self._create_color_callback(scene_idx)
+                    }
 
-                callback = self.clip_slot_callbacks[scene_idx]
+                callbacks = self.clip_slot_callbacks[scene_idx]
 
-                # Add listener for has_clip changes (remove old listener first if exists)
-                if clip_slot.has_clip_has_listener(callback):
-                    clip_slot.remove_has_clip_listener(callback)
-                clip_slot.add_has_clip_listener(callback)
+                # Add ClipSlot listeners
+                if clip_slot.has_clip_has_listener(callbacks['has_clip']):
+                    clip_slot.remove_has_clip_listener(callbacks['has_clip'])
+                clip_slot.add_has_clip_listener(callbacks['has_clip'])
+
+                if clip_slot.has_stop_button_has_listener(callbacks['has_stop_button']):
+                    clip_slot.remove_has_stop_button_listener(callbacks['has_stop_button'])
+                clip_slot.add_has_stop_button_listener(callbacks['has_stop_button'])
+
+                if clip_slot.playing_status_has_listener(callbacks['playing_status']):
+                    clip_slot.remove_playing_status_listener(callbacks['playing_status'])
+                clip_slot.add_playing_status_listener(callbacks['playing_status'])
+
+                if hasattr(clip_slot, 'color') and clip_slot.color_has_listener(callbacks['color']):
+                    clip_slot.remove_color_listener(callbacks['color'])
+                if hasattr(clip_slot, 'color'):
+                    clip_slot.add_color_listener(callbacks['color'])
+
+                # If slot has a clip, observe clip properties
+                if has_clip and clip_slot.clip:
+                    self._observe_clip(clip_slot.clip, scene_idx)
 
             self.log(f"Track {self.track_index}: Observing {len(self.track.clip_slots)} clip slots")
         except Exception as e:
@@ -437,6 +464,166 @@ class TrackObserver:
             self._on_clip_slot_changed(scene_idx)
         return callback
 
+    def _create_has_clip_callback(self, scene_idx):
+        """Create a callback for has_clip listener."""
+        def callback():
+            self._on_clip_slot_changed(scene_idx)
+        return callback
+
+    def _create_has_stop_callback(self, scene_idx):
+        """Create a callback for has_stop_button listener."""
+        def callback():
+            self._on_has_stop_changed(scene_idx)
+        return callback
+
+    def _create_playing_status_callback(self, scene_idx):
+        """Create a callback for playing_status listener."""
+        def callback():
+            self._on_playing_status_changed(scene_idx)
+        return callback
+
+    def _create_color_callback(self, scene_idx):
+        """Create a callback for color listener."""
+        def callback():
+            self._on_slot_color_changed(scene_idx)
+        return callback
+
+    def _observe_clip(self, clip, scene_idx):
+        """Observe properties of a Clip object."""
+        try:
+            # Store clip callbacks for cleanup
+            if not hasattr(self, 'clip_callbacks'):
+                self.clip_callbacks = {}
+
+            clip_callbacks = {
+                'name': lambda: self._on_clip_name_changed(scene_idx),
+                'color': lambda: self._on_clip_color_changed(scene_idx),
+                'muted': lambda: self._on_clip_muted_changed(scene_idx),
+                'looping': lambda: self._on_clip_looping_changed(scene_idx),
+            }
+
+            self.clip_callbacks[scene_idx] = clip_callbacks
+
+            # Add Clip listeners
+            if clip.name_has_listener(clip_callbacks['name']):
+                clip.remove_name_listener(clip_callbacks['name'])
+            clip.add_name_listener(clip_callbacks['name'])
+
+            if clip.color_has_listener(clip_callbacks['color']):
+                clip.remove_color_listener(clip_callbacks['color'])
+            clip.add_color_listener(clip_callbacks['color'])
+
+            if clip.muted_has_listener(clip_callbacks['muted']):
+                clip.remove_muted_listener(clip_callbacks['muted'])
+            clip.add_muted_listener(clip_callbacks['muted'])
+
+            if clip.looping_has_listener(clip_callbacks['looping']):
+                clip.remove_looping_listener(clip_callbacks['looping'])
+            clip.add_looping_listener(clip_callbacks['looping'])
+
+        except Exception as e:
+            self.log(f"Error observing clip at scene {scene_idx}: {e}")
+
+    def _on_has_stop_changed(self, scene_idx):
+        """Called when clip_slot has_stop_button changes."""
+        try:
+            clip_slot = self.track.clip_slots[scene_idx]
+            has_stop = clip_slot.has_stop_button
+            
+            # Update state
+            state = self.clip_slot_states.get((self.track_index, scene_idx), {})
+            state['has_stop_button'] = has_stop
+            self.clip_slot_states[(self.track_index, scene_idx)] = state
+
+            self.sender.send_event("/live/clip_slot/has_stop",
+                                  self.track_index, scene_idx, 1 if has_stop else 0)
+            self.log(f"Clip slot [{self.track_index},{scene_idx}] has_stop: {has_stop}")
+        except Exception as e:
+            self.log(f"Error handling has_stop change at [{self.track_index},{scene_idx}]: {e}")
+
+    def _on_playing_status_changed(self, scene_idx):
+        """Called when clip_slot playback state changes."""
+        try:
+            clip_slot = self.track.clip_slots[scene_idx]
+            status = clip_slot.playing_status
+            
+            # Update state
+            state = self.clip_slot_states.get((self.track_index, scene_idx), {})
+            state['playing_status'] = status
+            self.clip_slot_states[(self.track_index, scene_idx)] = state
+
+            self.sender.send_event("/live/clip_slot/playing_status",
+                                  self.track_index, scene_idx, status)
+            # Don't log every playing_status change (too noisy)
+        except Exception as e:
+            self.log(f"Error handling playing_status change at [{self.track_index},{scene_idx}]: {e}")
+
+    def _on_slot_color_changed(self, scene_idx):
+        """Called when clip_slot color changes."""
+        try:
+            clip_slot = self.track.clip_slots[scene_idx]
+            color = clip_slot.color if hasattr(clip_slot, 'color') else None
+            
+            if color is not None:
+                # Update state
+                state = self.clip_slot_states.get((self.track_index, scene_idx), {})
+                state['color'] = color
+                self.clip_slot_states[(self.track_index, scene_idx)] = state
+
+                self.sender.send_event("/live/clip_slot/color",
+                                      self.track_index, scene_idx, color)
+                self.log(f"Clip slot [{self.track_index},{scene_idx}] color: {color}")
+        except Exception as e:
+            self.log(f"Error handling slot color change at [{self.track_index},{scene_idx}]: {e}")
+
+    def _on_clip_name_changed(self, scene_idx):
+        """Called when clip name changes."""
+        try:
+            clip_slot = self.track.clip_slots[scene_idx]
+            if clip_slot.has_clip and clip_slot.clip:
+                name = str(clip_slot.clip.name)
+                self.sender.send_event("/live/clip/name",
+                                      self.track_index, scene_idx, name)
+                self.log(f"Clip [{self.track_index},{scene_idx}] renamed: '{name}'")
+        except Exception as e:
+            self.log(f"Error handling clip name change at [{self.track_index},{scene_idx}]: {e}")
+
+    def _on_clip_color_changed(self, scene_idx):
+        """Called when clip color changes."""
+        try:
+            clip_slot = self.track.clip_slots[scene_idx]
+            if clip_slot.has_clip and clip_slot.clip:
+                color = clip_slot.clip.color
+                self.sender.send_event("/live/clip/color",
+                                      self.track_index, scene_idx, color)
+                self.log(f"Clip [{self.track_index},{scene_idx}] color: {color}")
+        except Exception as e:
+            self.log(f"Error handling clip color change at [{self.track_index},{scene_idx}]: {e}")
+
+    def _on_clip_muted_changed(self, scene_idx):
+        """Called when clip muted state changes."""
+        try:
+            clip_slot = self.track.clip_slots[scene_idx]
+            if clip_slot.has_clip and clip_slot.clip:
+                muted = bool(clip_slot.clip.muted)
+                self.sender.send_event("/live/clip/muted",
+                                      self.track_index, scene_idx, 1 if muted else 0)
+                self.log(f"Clip [{self.track_index},{scene_idx}] muted: {muted}")
+        except Exception as e:
+            self.log(f"Error handling clip muted change at [{self.track_index},{scene_idx}]: {e}")
+
+    def _on_clip_looping_changed(self, scene_idx):
+        """Called when clip looping state changes."""
+        try:
+            clip_slot = self.track.clip_slots[scene_idx]
+            if clip_slot.has_clip and clip_slot.clip:
+                looping = bool(clip_slot.clip.looping)
+                self.sender.send_event("/live/clip/looping",
+                                      self.track_index, scene_idx, 1 if looping else 0)
+                self.log(f"Clip [{self.track_index},{scene_idx}] looping: {looping}")
+        except Exception as e:
+            self.log(f"Error handling clip looping change at [{self.track_index},{scene_idx}]: {e}")
+
     def _on_clip_slot_changed(self, scene_idx: int):
         """Called when a clip slot's has_clip state changes."""
         try:
@@ -444,27 +631,37 @@ class TrackObserver:
 
             clip_slot = self.track.clip_slots[scene_idx]
             has_clip = clip_slot.has_clip
-            old_state = self.clip_slot_states.get((self.track_index, scene_idx), False)
+            state = self.clip_slot_states.get((self.track_index, scene_idx), {})
+            old_has_clip = state.get('has_clip', False)
 
-            self.log(f"[DEBUG] has_clip={has_clip}, old_state={old_state}")
+            self.log(f"[DEBUG] has_clip={has_clip}, old_has_clip={old_has_clip}")
 
             # Update state
-            self.clip_slot_states[(self.track_index, scene_idx)] = has_clip
+            state['has_clip'] = has_clip
+            self.clip_slot_states[(self.track_index, scene_idx)] = state
 
             # Determine if clip was added or removed
-            if has_clip and not old_state:
+            if has_clip and not old_has_clip:
                 # Clip added
                 clip_name = clip_slot.clip.name if clip_slot.clip else "Untitled"
                 self.log(f"[DEBUG] Sending clip/added event: track={self.track_index}, scene={scene_idx}, name='{clip_name}'")
                 self.sender.send_event("/live/clip/added", self.track_index, scene_idx, clip_name)
                 self.log(f"Clip added at [{self.track_index},{scene_idx}]: '{clip_name}'")
-            elif not has_clip and old_state:
+                
+                # Observe the newly added clip
+                if clip_slot.clip:
+                    self._observe_clip(clip_slot.clip, scene_idx)
+            elif not has_clip and old_has_clip:
                 # Clip removed
                 self.log(f"[DEBUG] Sending clip/removed event: track={self.track_index}, scene={scene_idx}")
                 self.sender.send_event("/live/clip/removed", self.track_index, scene_idx)
                 self.log(f"Clip removed at [{self.track_index},{scene_idx}]")
+                
+                # Clean up clip listeners
+                if hasattr(self, 'clip_callbacks') and scene_idx in self.clip_callbacks:
+                    del self.clip_callbacks[scene_idx]
             else:
-                self.log(f"[DEBUG] No state change detected (has_clip={has_clip}, old_state={old_state})")
+                self.log(f"[DEBUG] No state change detected (has_clip={has_clip}, old_has_clip={old_has_clip})")
 
         except Exception as e:
             self.log(f"Error handling clip slot change at [{self.track_index},{scene_idx}]: {e}")
@@ -501,10 +698,41 @@ class TrackObserver:
             # Unregister clip slot listeners
             for scene_idx, clip_slot in enumerate(self.track.clip_slots):
                 if scene_idx in self.clip_slot_callbacks:
-                    callback = self.clip_slot_callbacks[scene_idx]
-                    if clip_slot.has_clip_has_listener(callback):
-                        clip_slot.remove_has_clip_listener(callback)
+                    callbacks = self.clip_slot_callbacks[scene_idx]
+                    
+                    # Remove ClipSlot listeners
+                    if isinstance(callbacks, dict):
+                        if clip_slot.has_clip_has_listener(callbacks['has_clip']):
+                            clip_slot.remove_has_clip_listener(callbacks['has_clip'])
+                        if clip_slot.has_stop_button_has_listener(callbacks['has_stop_button']):
+                            clip_slot.remove_has_stop_button_listener(callbacks['has_stop_button'])
+                        if clip_slot.playing_status_has_listener(callbacks['playing_status']):
+                            clip_slot.remove_playing_status_listener(callbacks['playing_status'])
+                        if hasattr(clip_slot, 'color') and clip_slot.color_has_listener(callbacks['color']):
+                            clip_slot.remove_color_listener(callbacks['color'])
+                    else:
+                        # Old callback format (backwards compatibility)
+                        if clip_slot.has_clip_has_listener(callbacks):
+                            clip_slot.remove_has_clip_listener(callbacks)
+
+                # Remove Clip listeners if they exist
+                if hasattr(self, 'clip_callbacks') and scene_idx in self.clip_callbacks:
+                    if clip_slot.has_clip and clip_slot.clip:
+                        clip = clip_slot.clip
+                        clip_callbacks = self.clip_callbacks[scene_idx]
+                        
+                        if clip.name_has_listener(clip_callbacks['name']):
+                            clip.remove_name_listener(clip_callbacks['name'])
+                        if clip.color_has_listener(clip_callbacks['color']):
+                            clip.remove_color_listener(clip_callbacks['color'])
+                        if clip.muted_has_listener(clip_callbacks['muted']):
+                            clip.remove_muted_listener(clip_callbacks['muted'])
+                        if clip.looping_has_listener(clip_callbacks['looping']):
+                            clip.remove_looping_listener(clip_callbacks['looping'])
+
             self.clip_slot_callbacks.clear()
+            if hasattr(self, 'clip_callbacks'):
+                self.clip_callbacks.clear()
 
             # Unregister device observers
             for obs in self.device_observers:

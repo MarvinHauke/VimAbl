@@ -13,6 +13,7 @@ VimAbl brings the power of Vim-style keyboard navigation to Ableton Live, combin
 - **🎯 Context-aware shortcuts** - Different behavior in Arrangement vs Session view
 - **🔒 Thread-safe Remote Script** - Exposes Live's state via local socket server (port 9001)
 - **⚡ UDP/OSC Real-Time Observers** - Streams Live events with < 10ms latency (port 9002)
+- **🎛️ ClipSlot Matrix** - Full track × scene grid with real-time playback states
 - **🌲 Web TreeViewer** - Real-time project visualization via WebSocket (port 8765)
 - **🧩 Modular architecture** - Easy to extend with new commands
 - **🔄 Auto-recovery** - Monitors and restarts eventtaps automatically

@@ -1,7 +1,10 @@
 # ClipSlot and Clip Observable Properties
 
+Reference documentation for all observable ClipSlot and Clip properties in the Ableton Live API.
+
 **Date**: 2025-11-17
 **Source**: Live API Documentation (Cycling '74)
+**Related**: [OSC Protocol](osc-protocol.md), [ClipSlot Implementation](../architecture/clipslot-implementation.md)
 
 ## ClipSlot Properties - REAL-TIME OBSERVABLE ✅
 
