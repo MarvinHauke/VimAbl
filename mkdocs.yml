@@ -110,12 +110,6 @@ plugins:
       type: timeago
       fallback_to_build_date: true
 
-# Validation settings - allow files not in nav (auto-generated content, includes, etc.)
-validation:
-  nav:
-    omitted_files: info  # Don't fail on files not in nav, just log as info
-  links:
-    not_found: warn  # Warn on broken links instead of failing
 
 extra:
   social:

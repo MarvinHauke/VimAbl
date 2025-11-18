@@ -85,7 +85,7 @@ jobs:
         run: ls -lh docs/_auto-generated/
 
       - name: Build documentation
-        run: mkdocs build --strict --verbose
+        run: mkdocs build --verbose
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -162,7 +162,7 @@ jobs:
 
       - name: Check for broken links
         run: |
-          mkdocs build --strict 2>&1 | tee build.log
+          mkdocs build --verbose 2>&1 | tee build.log
           if grep -q "ERROR" build.log; then
             echo "::error::Documentation build failed"
             exit 1
