@@ -108,6 +108,14 @@ plugins:
   - git-revision-date-localized:
       enable_creation_date: true
       type: timeago
+      fallback_to_build_date: true
+
+# Validation settings - allow files not in nav (auto-generated content, includes, etc.)
+validation:
+  nav:
+    omitted_files: info  # Don't fail on files not in nav, just log as info
+  links:
+    not_found: warn  # Warn on broken links instead of failing
 
 extra:
   social:
@@ -146,12 +154,15 @@ nav:
       - Data Flow: architecture/data-flow.md
       - Hammerspoon Integration: architecture/hammerspoon-integration.md
       - Python Remote Script: architecture/python-remote-script.md
+      - ClipSlot Implementation: architecture/clipslot-implementation.md
   - API Reference:
       - Commands: api-reference/commands.md
       - Lua API: api-reference/lua-api.md
       - OSC Protocol: api-reference/osc-protocol.md
+      - ClipSlot Observables: api-reference/clipslot-observables.md
   - Development:
       - Extending VimAbl: development/extending.md
+      - Contributing: contributing.md
   - Planned Features: planned-features.md
   - Troubleshooting: troubleshooting.md
   - FAQ: faq.md
