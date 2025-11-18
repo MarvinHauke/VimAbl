@@ -3,6 +3,11 @@ UDP sender for emitting OSC events from Ableton Live Remote Script.
 
 This module provides a non-blocking UDP socket for sending real-time events
 to the UDP listener service without blocking Ableton's main thread.
+
+PERFORMANCE TUNING:
+-------------------
+Logging is controlled centrally in logging_config.py
+Set ENABLE_LOGGING = False for better performance
 """
 
 import socket
@@ -11,12 +16,16 @@ from typing import Any, Optional
 
 try:
     from .osc import build_sequenced_message
+    from .logging_config import log
 except ImportError:
     # For testing outside of package context
     import sys
     import os
     sys.path.insert(0, os.path.dirname(__file__))
     from osc import build_sequenced_message
+    # Fallback logging function for standalone testing
+    def log(prefix: str, message: str, force: bool = False):
+        print(f"[{prefix}] {message}")
 
 
 class UDPSender:
@@ -155,15 +164,15 @@ class UDPSender:
             "port": self.port
         }
 
-    def log(self, message: str):
+    def log(self, message: str, force: bool = False):
         """
-        Log message (can be overridden to integrate with Ableton's logging).
+        Log message using centralized logging config.
 
         Args:
             message: Message to log
+            force: If True, log even if ENABLE_LOGGING is False (for critical errors)
         """
-        # Default: print to stdout (will appear in Ableton's log)
-        print("[UDPSender] {}".format(message))
+        log("UDPSender", message, force=force)
 
 
 # Singleton instance (initialized by LiveState.py)

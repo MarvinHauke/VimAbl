@@ -10,9 +10,15 @@ Performance Guidelines:
 - Listeners only set flags and cache simple values
 - UDP sends are non-blocking and safe
 - Heavy work deferred to update() called at ~60Hz
+
+PERFORMANCE TUNING:
+-------------------
+Logging is controlled centrally in logging_config.py
+Set ENABLE_LOGGING = False for better performance
 """
 
 import Live
+from .logging_config import log
 
 
 class SessionCursorObserver:
@@ -37,11 +43,11 @@ class SessionCursorObserver:
         Args:
             song: Live.Song.Song - The Live Set
             sender: UDPSender - UDP event sender
-            log_func: callable - Ableton's log_message function for debug
+            log_func: callable - Ableton's log_message function (DEPRECATED, uses centralized logging)
         """
         self.song = song
         self.sender = sender
-        self.log = log_func
+        # Keep log_func for backward compatibility but not used
         self.view = song.view
 
         # Cached state - updated by listeners (O(1))
@@ -62,7 +68,7 @@ class SessionCursorObserver:
         self._scenes_list = None
         self._rebuild_caches()
 
-        self.log("[CursorObserver] Initializing Session View observer")
+        log("CursorObserver", "Initializing Session View observer")
         self._add_listeners()
 
         # Send initial state
@@ -79,9 +85,9 @@ class SessionCursorObserver:
         self._return_tracks_list = list(self.song.return_tracks)
         self._master_track = self.song.master_track
         self._scenes_list = list(self.song.scenes)
-        
-        self.log(
-            f"[CursorObserver] Cache rebuilt: {len(self._tracks_list)} tracks, "
+
+        log("CursorObserver",
+            f"Cache rebuilt: {len(self._tracks_list)} tracks, "
             f"{len(self._return_tracks_list)} returns, "
             f"{len(self._scenes_list)} scenes"
         )
@@ -92,12 +98,12 @@ class SessionCursorObserver:
             # Track selection observer
             if not self.view.selected_track_has_listener(self._on_track_changed):
                 self.view.add_selected_track_listener(self._on_track_changed)
-                self.log("[CursorObserver] Added selected_track listener")
+                log("CursorObserver", "Added selected_track listener")
 
             # Scene selection observer
             if not self.view.selected_scene_has_listener(self._on_scene_changed):
                 self.view.add_selected_scene_listener(self._on_scene_changed)
-                self.log("[CursorObserver] Added selected_scene listener")
+                log("CursorObserver", "Added selected_scene listener")
 
             # Track/scene list change observers (for cache invalidation)
             if not self.song.tracks_has_listener(self._on_tracks_changed):
@@ -107,7 +113,7 @@ class SessionCursorObserver:
                 self.song.add_scenes_listener(self._on_scenes_changed)
 
         except Exception as e:
-            self.log(f"[CursorObserver] Error adding listeners: {e}")
+            log("CursorObserver", f"Error adding listeners: {e}")
 
     def _remove_listeners(self):
         """Remove all observers - call on cleanup."""
@@ -128,9 +134,9 @@ class SessionCursorObserver:
             if self.song.scenes_has_listener(self._on_scenes_changed):
                 self.song.remove_scenes_listener(self._on_scenes_changed)
 
-            self.log("[CursorObserver] Removed all listeners")
+            log("CursorObserver", "Removed all listeners")
         except Exception as e:
-            self.log(f"[CursorObserver] Error removing listeners: {e}")
+            log("CursorObserver", f"Error removing listeners: {e}")
 
     # =========================================================================
     # Listener Callbacks - MUST BE NON-BLOCKING
@@ -165,7 +171,7 @@ class SessionCursorObserver:
                 if not track.color_has_listener(self._on_track_color_changed):
                     track.add_color_listener(self._on_track_color_changed)
                 
-                self.log(f"[CursorObserver] Master track selected, index: {self._selected_track_idx}")
+                log("CursorObserver", f"Master track selected, index: {self._selected_track_idx}")
                 return
             
             # Try regular tracks
@@ -194,19 +200,19 @@ class SessionCursorObserver:
                     if not track.color_has_listener(self._on_track_color_changed):
                         track.add_color_listener(self._on_track_color_changed)
                     
-                    self.log(f"[CursorObserver] Return track selected: {return_idx}, global index: {self._selected_track_idx}")
+                    log("CursorObserver", f"Return track selected: {return_idx}, global index: {self._selected_track_idx}")
                     return
             except ValueError:
                 pass
             
             # Track not found in any list
-            self.log(f"[CursorObserver] Selected track not found in any track list")
+            log("CursorObserver", f"Selected track not found in any track list")
             self._selected_track_idx = None
             self._selected_track = None
                     
         except (ValueError, AttributeError) as e:
             # Track not in list (edge case: track was just deleted)
-            self.log(f"[CursorObserver] Track index lookup failed: {e}")
+            log("CursorObserver", f"Track index lookup failed: {e}")
             self._selected_track_idx = None
             self._selected_track = None
 
@@ -222,19 +228,19 @@ class SessionCursorObserver:
                 self._selected_scene_idx = self._scenes_list.index(scene)
                 self._scene_changed = True
         except (ValueError, AttributeError) as e:
-            self.log(f"[CursorObserver] Scene index lookup failed: {e}")
+            log("CursorObserver", f"Scene index lookup failed: {e}")
             self._selected_scene_idx = None
 
     def _on_tracks_changed(self):
         """Tracks added/removed - rebuild cache."""
-        self.log("[CursorObserver] Track list changed, rebuilding cache")
+        log("CursorObserver", "Track list changed, rebuilding cache")
         self._rebuild_caches()
         # Re-check current selection after rebuild
         self._on_track_changed()
 
     def _on_scenes_changed(self):
         """Scenes added/removed - rebuild cache."""
-        self.log("[CursorObserver] Scene list changed, rebuilding cache")
+        log("CursorObserver", "Scene list changed, rebuilding cache")
         self._rebuild_caches()
         self._on_scene_changed()
 
@@ -321,7 +327,7 @@ class SessionCursorObserver:
 
         except Exception as e:
             # Log but don't crash - this runs at 60Hz
-            self.log(f"[CursorObserver] Error checking clip slot: {e}")
+            log("CursorObserver", f"Error checking clip slot: {e}")
 
     # =========================================================================
     # UDP Event Senders - Non-blocking, fast
@@ -340,9 +346,9 @@ class SessionCursorObserver:
                 if self._selected_scene_idx is not None:
                     self._send_scene_selection()
 
-            self.log("[CursorObserver] Sent initial cursor state")
+            log("CursorObserver", "Sent initial cursor state")
         except Exception as e:
-            self.log(f"[CursorObserver] Error sending initial state: {e}")
+            log("CursorObserver", f"Error sending initial state: {e}")
 
     def _send_track_selection(self):
         """
@@ -379,16 +385,16 @@ class SessionCursorObserver:
             # Send with color and name
             if color_rgb is not None and track_name is not None:
                 self.sender.send_event("/live/cursor/track", track_idx, color_rgb, track_name)
-                self.log(f"[CursorObserver] Track selected: {track_idx} '{track_name}' (0x{color_rgb:06X})")
+                log("CursorObserver", f"Track selected: {track_idx} '{track_name}' (0x{color_rgb:06X})")
             elif color_rgb is not None:
                 self.sender.send_event("/live/cursor/track", track_idx, color_rgb)
-                self.log(f"[CursorObserver] Track selected: {track_idx} (0x{color_rgb:06X})")
+                log("CursorObserver", f"Track selected: {track_idx} (0x{color_rgb:06X})")
             else:
                 self.sender.send_event("/live/cursor/track", track_idx)
-                self.log(f"[CursorObserver] Track selected: {track_idx}")
+                log("CursorObserver", f"Track selected: {track_idx}")
                 
         except Exception as e:
-            self.log(f"[CursorObserver] Error sending track selection: {e}")
+            log("CursorObserver", f"Error sending track selection: {e}")
 
     def _send_track_color_update(self):
         """
@@ -409,12 +415,12 @@ class SessionCursorObserver:
             try:
                 color_rgb = int(self._selected_track.color)
                 self.sender.send_event("/live/track/color", track_idx, color_rgb)
-                self.log(f"[CursorObserver] Track {track_idx} color changed: 0x{color_rgb:06X}")
+                log("CursorObserver", f"Track {track_idx} color changed: 0x{color_rgb:06X}")
             except (AttributeError, ValueError) as e:
-                self.log(f"[CursorObserver] Error getting track color: {e}")
+                log("CursorObserver", f"Error getting track color: {e}")
                 
         except Exception as e:
-            self.log(f"[CursorObserver] Error sending track color update: {e}")
+            log("CursorObserver", f"Error sending track color update: {e}")
 
     def _send_scene_selection(self):
         """
@@ -424,9 +430,9 @@ class SessionCursorObserver:
         """
         try:
             self.sender.send_event("/live/cursor/scene", self._selected_scene_idx)
-            self.log(f"[CursorObserver] Scene selected: {self._selected_scene_idx}")
+            log("CursorObserver", f"Scene selected: {self._selected_scene_idx}")
         except Exception as e:
-            self.log(f"[CursorObserver] Error sending scene selection: {e}")
+            log("CursorObserver", f"Error sending scene selection: {e}")
 
     def _send_clip_slot_state(self, slot, track_idx, scene_idx):
         """
@@ -455,10 +461,10 @@ class SessionCursorObserver:
             )
 
             state = f"has_clip={bool(has_clip)}, playing={bool(is_playing)}, triggered={bool(is_triggered)}"
-            self.log(f"[CursorObserver] Clip slot [{track_idx},{scene_idx}]: {state}")
+            log("CursorObserver", f"Clip slot [{track_idx},{scene_idx}]: {state}")
 
         except Exception as e:
-            self.log(f"[CursorObserver] Error sending clip slot state: {e}")
+            log("CursorObserver", f"Error sending clip slot state: {e}")
 
     # =========================================================================
     # Cleanup
@@ -466,5 +472,5 @@ class SessionCursorObserver:
 
     def disconnect(self):
         """Clean up all listeners - call on script shutdown."""
-        self.log("[CursorObserver] Disconnecting Session View observer")
+        log("CursorObserver", "Disconnecting Session View observer")
         self._remove_listeners()

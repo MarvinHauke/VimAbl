@@ -1,5 +1,10 @@
 """
 Main Remote Script controller that observes Live's state
+
+PERFORMANCE TUNING:
+-------------------
+Logging is controlled centrally in logging_config.py
+Set ENABLE_LOGGING = False for better performance
 """
 
 import Live
@@ -10,6 +15,7 @@ from .commands import CommandHandlers
 from .server import CommandServer
 from .udp_sender import UDPSender
 from .cursor_observer import SessionCursorObserver
+from .logging_config import log_simple
 
 
 class LiveState(ControlSurface):
@@ -27,7 +33,7 @@ class LiveState(ControlSurface):
         # Initialize UDP sender for real-time events
         self.udp_sender = UDPSender(host="127.0.0.1", port=9002)
         self.udp_sender.start()
-        self.log_message("UDP sender initialized on 127.0.0.1:9002")
+        log_simple("UDP sender initialized on 127.0.0.1:9002")
 
         # Initialize Live API observers (tracks, devices, transport)
         self.udp_observer_manager = ObserverManager(
@@ -35,7 +41,7 @@ class LiveState(ControlSurface):
             udp_sender=self.udp_sender
         )
         self.udp_observer_manager.start()
-        self.log_message("UDP observer manager started")
+        log_simple("UDP observer manager started")
 
         # Initialize Session View cursor observer
         self.cursor_observer = SessionCursorObserver(
@@ -43,7 +49,7 @@ class LiveState(ControlSurface):
             sender=self.udp_sender,
             log_func=self.log_message
         )
-        self.log_message("Session cursor observer initialized")
+        log_simple("Session cursor observer initialized")
 
         # Initialize command handlers
         self.command_handlers = CommandHandlers(
@@ -65,7 +71,7 @@ class LiveState(ControlSurface):
         # Listen for document path changes (e.g., Save As, first save)
         self._setup_document_listener()
 
-        self.log_message("Live State Remote Script initialized")
+        log_simple("Live State Remote Script initialized")
 
     def _setup_document_listener(self):
         """Set up listener for document path changes"""
@@ -73,9 +79,9 @@ class LiveState(ControlSurface):
             document = self.application.get_document()
             if document and hasattr(document, 'add_path_listener'):
                 document.add_path_listener(self._on_document_path_changed)
-                self.log_message("Document path listener added")
+                log_simple("Document path listener added")
         except Exception as e:
-            self.log_message(f"Failed to add document listener: {str(e)}")
+            log_simple(f"Failed to add document listener: {str(e)}")
 
     def _on_document_path_changed(self):
         """Called when the document path changes (e.g., after Save As or first save)"""
@@ -83,12 +89,12 @@ class LiveState(ControlSurface):
             document = self.application.get_document()
             if document and document.path:
                 path = str(document.path)
-                self.log_message(f"Document path changed to: {path}")
+                log_simple(f"Document path changed to: {path}")
                 # Broadcast the path change via the server
                 # This allows Hammerspoon/WebSocket to react to the save
                 self.server.broadcast_event("PROJECT_PATH_CHANGED", {"project_path": path})
         except Exception as e:
-            self.log_message(f"Error in document path listener: {str(e)}")
+            log_simple(f"Error in document path listener: {str(e)}")
 
     def update_display(self):
         """
@@ -107,22 +113,22 @@ class LiveState(ControlSurface):
 
     def disconnect(self):
         """Called when script is disconnected"""
-        self.log_message("Live State Remote Script disconnecting")
+        log_simple("Live State Remote Script disconnecting")
 
         # Disconnect cursor observer
         if hasattr(self, 'cursor_observer'):
             self.cursor_observer.disconnect()
-            self.log_message("Cursor observer disconnected")
+            log_simple("Cursor observer disconnected")
 
         # Stop UDP observer manager
         if hasattr(self, 'udp_observer_manager'):
             self.udp_observer_manager.stop()
-            self.log_message("UDP observer manager stopped")
+            log_simple("UDP observer manager stopped")
 
         # Stop UDP sender
         if hasattr(self, 'udp_sender'):
             self.udp_sender.stop()
-            self.log_message("UDP sender stopped")
+            log_simple("UDP sender stopped")
 
         # Remove view observers
         self.observers.teardown()

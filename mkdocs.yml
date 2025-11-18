@@ -156,6 +156,7 @@ nav:
       - ClipSlot Observables: api-reference/clipslot-observables.md
   - Development:
       - Extending VimAbl: development/extending.md
+      - Performance Tuning: development/performance-tuning.md
       - Contributing: contributing.md
   - Planned Features: planned-features.md
   - Troubleshooting: troubleshooting.md

@@ -64,10 +64,14 @@
 						astStore.applyLiveEvent(eventPath, args, 0);
 					}
 
-					console.log(
-						`[UDP Event #${liveEvent.payload.seq_num}] ${eventPath}`,
-						args
-					);
+					// Only log non-transport events to reduce console spam
+					// (Transport play events fire very frequently during playback)
+					if (!eventPath.startsWith('/live/transport/play')) {
+						console.log(
+							`[UDP Event #${liveEvent.payload.seq_num}] ${eventPath}`,
+							args
+						);
+					}
 				} else if (message.type === 'ERROR') {
 					connectionStore.setError(message.payload.error);
 					// Check if this is a gap warning
