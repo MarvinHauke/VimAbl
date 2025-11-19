@@ -112,6 +112,9 @@ plugins:
 
 
 extra:
+  social_card:
+    type: "summary_large_image"
+    image: "assets/logo.png"
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/MarvinHauke/VimAbl
@@ -159,7 +162,8 @@ nav:
       - Extending VimAbl: development/extending.md
       - Performance Tuning: development/performance-tuning.md
       - Contributing: contributing.md
-  - Planned Features: planned-features.md
-  - Troubleshooting: troubleshooting.md
-  - FAQ: faq.md
-  - Changelog: changelog.md
+  - Reference:
+      - Planned Features: planned-features.md
+      - Troubleshooting: troubleshooting.md
+      - FAQ: faq.md
+      - Changelog: changelog.md
