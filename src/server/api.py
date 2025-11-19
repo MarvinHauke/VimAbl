@@ -413,7 +413,11 @@ class ASTServer:
             - /live/device/added <track_idx> <device_idx> <name>
             - /live/device/deleted <track_idx> <device_idx>
             - /live/device/param <track_idx> <device_idx> <param_id> <value>
+            - /live/clip_slot/created <track_idx> <scene_idx> <has_clip> <has_stop_button> <playing_status>
             - /live/scene/renamed <scene_idx> <name>
+            - /live/scene/added <scene_idx> <name>
+            - /live/scene/removed <scene_idx>
+            - /live/scene/reordered <scene_idx> <name>
             - /live/transport/play <is_playing_bool>
             - /live/transport/tempo <bpm_float>
         """
@@ -437,6 +441,15 @@ class ASTServer:
                 return await self._handle_device_deleted(args, seq_num)
             elif event_path == "/live/scene/renamed":
                 return await self._handle_scene_renamed(args, seq_num)
+            elif event_path == "/live/scene/added":
+                return await self._handle_scene_added(args, seq_num, timestamp)
+            elif event_path == "/live/scene/removed":
+                return await self._handle_scene_removed(args, seq_num)
+            elif event_path == "/live/scene/reordered":
+                return await self._handle_scene_reordered(args, seq_num)
+            elif event_path == "/live/clip_slot/created":
+                # Clip slot creation is broadcast-only, client handles AST update
+                return {"type": "clip_slot_created", "broadcast_only": True}
             elif event_path.startswith("/live/transport/"):
                 # Transport events are lightweight, just broadcast without AST update
                 return {"type": "transport_event", "broadcast_only": True}
@@ -704,6 +717,51 @@ class ASTServer:
 
         logger.info(f"Scene {scene_idx} renamed: '{old_name}' → '{new_name}'")
         return {"type": "scene_renamed", "scene_idx": scene_idx, "name": new_name}
+
+    async def _handle_scene_added(self, args: list, seq_num: int, timestamp: float) -> Dict[str, Any]:
+        """
+        Handle scene added event.
+
+        Note: Scene events are broadcast-only. The client-side AST handles the update,
+        and the server will get the authoritative state from XML on next save.
+        """
+        if len(args) >= 2:
+            scene_idx = int(args[0])
+            scene_name = str(args[1])
+            logger.info(f"Scene {scene_idx} added: '{scene_name}'")
+
+        # Return broadcast_only flag - main.py will broadcast the raw event
+        # Client-side AST updater will handle adding the scene
+        return {"type": "scene_added", "broadcast_only": True}
+
+    async def _handle_scene_removed(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """
+        Handle scene removed event.
+
+        Note: Scene events are broadcast-only. The client-side AST handles the update,
+        and the server will get the authoritative state from XML on next save.
+        """
+        if len(args) >= 1:
+            scene_idx = int(args[0])
+            logger.info(f"Scene {scene_idx} removed")
+
+        # Return broadcast_only flag - main.py will broadcast the raw event
+        return {"type": "scene_removed", "broadcast_only": True}
+
+    async def _handle_scene_reordered(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """
+        Handle scene reordered event.
+
+        Note: Scene events are broadcast-only. The client-side AST handles the update,
+        and the server will get the authoritative state from XML on next save.
+        """
+        if len(args) >= 2:
+            scene_idx = int(args[0])
+            scene_name = str(args[1])
+            logger.info(f"Scene '{scene_name}' reordered to index {scene_idx}")
+
+        # Return broadcast_only flag - main.py will broadcast the raw event
+        return {"type": "scene_reordered", "broadcast_only": True}
 
     def _find_track_by_index(self, index: int) -> Optional[TrackNode]:
         """Find a track node by its index."""

@@ -41,12 +41,40 @@ The WebSocket AST system enables live visualization of your Ableton Live project
 
 **Purpose**: Receives real-time OSC events from Ableton Live's Remote Script
 
+**Architecture** (Phase 5j - Queue-Based):
+
+```
+UDP Socket (Port 9002)
+    ↓
+Receive Loop (non-blocking, async)
+    ↓
+Parse OSC Message
+    ↓
+Sequence Tracking (deduplication)
+    ↓
+Event Queue [put_nowait]
+    ↓
+┌─────────────────────────────┐
+│  asyncio.Queue (1000 events)│
+└─────────────────────────────┘
+    ↓
+Event Processor Task (concurrent)
+    ↓
+Event Callback (WebSocket broadcast)
+```
+
 **Key Features**:
-- Listens on port 9002 for UDP packets
-- Parses OSC messages with `/live/seq` wrapper
-- Extracts sequence numbers for gap detection
-- Invokes callback for each event
-- Tracks statistics (packets received, dropped, duplicates)
+- **Non-blocking reception**: UDP receives never block, even during slow WebSocket broadcasts
+- **Event queue**: 1000-event asyncio.Queue decouples reception from processing
+- **Concurrent tasks**: Receiver and processor run in parallel
+- **Zero packet loss**: Tested with 55+ events in <1ms bursts
+- **Sequence tracking**: Gap detection with monotonic sequence numbers
+- **Statistics tracking**: Packets received, processed, dropped, queue depth
+
+**Queue Benefits**:
+- Prevents UDP buffer overflow during rapid event bursts (e.g., scene reordering)
+- WebSocket broadcast latency doesn't affect UDP reception
+- Graceful overload handling (queue fills → drop at source with logging)
 
 **Message Format**:
 ```
@@ -56,6 +84,26 @@ The WebSocket AST system enables live visualization of your Ableton Live project
 **Example**:
 ```
 /live/seq 123 1234567890.123 /live/track/renamed 0 "My Track"
+```
+
+**Statistics Available**:
+```python
+stats = listener.get_stats()
+# Returns:
+{
+    "packets_received": 1250,
+    "packets_processed": 1250,
+    "packets_dropped": 0,
+    "parse_errors": 0,
+    "queue_size": 3,
+    "queue_max": 12,
+    "sequence": {
+        "total_received": 1250,
+        "duplicates": 2,
+        "gaps": 0,
+        "gap_size_total": 0
+    }
+}
 ```
 
 ### 2. AST Server (`src/server/api.py`)

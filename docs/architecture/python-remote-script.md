@@ -141,21 +141,100 @@ LiveState.__init__()
   ├─ init_logging(self.log_message)
   ├─ UDPSender.start()
   ├─ ObserverManager.start()
-  └─ CommandServer.start()
+  ├─ SessionCursorObserver.init()
+  ├─ CommandServer.start()
+  └─ _setup_tasks()                 # Schedule recurring tasks
 
-# Main loop (~60Hz)
+# Task Scheduling (Phase 5j Optimization)
+_setup_tasks()
+  ├─ Task 1: _poll_observer_manager()    # Every frame (~60Hz)
+  ├─ Task 2: _poll_cursor_observer()     # Every frame (~60Hz)
+  └─ Task 3: _log_stats_periodically()   # Every 5 minutes (18000 frames)
+
+# Main loop (~60Hz) - OPTIMIZED
 LiveState.update_display()
-  ├─ drain_log_queue()              # Process logs
-  ├─ ObserverManager.update()       # Debounce checks
-  └─ SessionCursorObserver.update() # Cursor polling
+  ├─ drain_log_queue()              # Process logs (micro-optimized)
+  └─ super().update_display()       # Run Task scheduler
+      ├─ _poll_observer_manager()   # Task 1: Debounce checks
+      ├─ _poll_cursor_observer()    # Task 2: Cursor polling
+      └─ _log_stats_periodically()  # Task 3: Stats (every 5 min)
 
 # Shutdown (Ableton unloads script)
 LiveState.disconnect()
+  ├─ SessionCursorObserver.disconnect()
   ├─ ObserverManager.stop()
   ├─ UDPSender.stop()
   ├─ CommandServer.stop()
   ├─ get_log_stats() → Log final metrics
-  └─ drain_log_queue() → Flush remaining logs
+  └─ drain_log_queue(max_messages=1000) → Flush remaining logs
+```
+
+### Task-Based Architecture (Phase 5j)
+
+VimAbl uses `_Framework.Task` to delegate polling logic from `update_display()`, keeping it minimal and performant.
+
+**Benefits:**
+
+- **Cleaner separation of concerns** - Polling logic moved to dedicated task functions
+- **Better testability** - Each task can be tested independently
+- **Improved readability** - `update_display()` reduced from ~40 lines to 7 lines
+- **Graceful fallback** - Falls back to legacy polling if Task setup fails
+
+**Task Callbacks:**
+
+```python
+def _poll_observer_manager(self, delta):
+    """Task callback: Check for trailing edge debounce events."""
+    if hasattr(self, 'udp_observer_manager'):
+        self.udp_observer_manager.update()
+    return RUNNING  # Keep task alive
+
+def _poll_cursor_observer(self, delta):
+    """Task callback: Update cursor observer."""
+    if hasattr(self, 'cursor_observer'):
+        self.cursor_observer.update()
+    return RUNNING  # Keep task alive
+
+def _log_stats_periodically(self, delta):
+    """Task callback: Log performance stats every 5 minutes."""
+    self._stats_tick_counter += 1
+    if self._stats_tick_counter >= 18000:  # 60Hz * 60s * 5min
+        stats = get_log_stats()
+        log("LiveState", f"Logging stats: {stats['messages_drained']} drained...", level="INFO")
+        self._stats_tick_counter = 0
+    return RUNNING  # Keep task alive
+```
+
+**Optimized update_display():**
+
+```python
+def update_display(self):
+    """
+    The fastest possible update loop for a heavy Ableton Remote Script.
+
+    Responsibilities (only):
+    - Drain logger queue (cheap, micro-optimized)
+    - Let _Framework.Task run its scheduled tasks
+    - DO NOT do any logic, debounce, polling, or model building here
+    """
+    # 1. Drain any queued log entries
+    try:
+        drain_log_queue()
+    except Exception:
+        pass  # Logging must never break the display loop
+
+    # 2. Run Ableton's task system (executes our scheduled tasks above)
+    super(LiveState, self).update_display()
+
+    # 3. Fallback: If task setup failed, use old polling method
+    if hasattr(self, '_task_setup_failed') and self._task_setup_failed:
+        try:
+            if hasattr(self, 'udp_observer_manager'):
+                self.udp_observer_manager.update()
+            if hasattr(self, 'cursor_observer'):
+                self.cursor_observer.update()
+        except Exception:
+            pass
 ```
 
 ## File Structure

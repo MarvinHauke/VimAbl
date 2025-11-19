@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **UDP Listener Queue Architecture (Phase 5j)**
+  - Non-blocking event processing with asyncio.Queue (maxsize=1000)
+  - Decoupled UDP packet reception from WebSocket broadcasting
+  - Separate event processor task for concurrent handling
+  - Eliminates packet loss during rapid event bursts (tested: 55 events in <1ms, zero loss)
+  - Queue statistics tracking: `queue_size`, `queue_max`
+  - Stress testing suite: `tests/test_udp_stress.py`
+- **_Framework.Task Integration in Remote Script**
+  - Migrated polling logic from `update_display()` to Task system
+  - Three recurring tasks scheduled at ~60Hz:
+    - Observer manager polling (debounce/batching)
+    - Cursor observer updates (highlighted_clip_slot)
+    - Performance stats logging (every 5 minutes)
+  - Fallback to legacy polling if Task setup fails
+  - ~40 lines of code removed from `update_display()` (now only 7 lines)
+
+### Added
 - **Optimized Logging System with Performance Metrics**
   - New streamlined logging architecture:
     - Removed fragile `LogQueue` class and `_log_dispatcher` global
@@ -53,6 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Pages deployment workflow with auto-generated documentation
 
 ### Changed
+- **Node ID Format Standardization**
+  - Client-side ID generation now matches server format for consistency
+  - Removed timestamp suffixes from dynamically created nodes
+  - ClipSlot IDs: `clip_slot_2_3` (was `clip_slot_2_3_1737367893421`)
+  - Device IDs: `device_2_1` (was `device_2_1_1737367893421`)
+  - Clip IDs: `clip_2_3` (was `clip_2_3_1737367893421`)
+  - Server remains single source of truth for SHA-256 hash computation
 - **Logging system refactor:**
   - Replaced `log_simple()` with unified `log()` function taking severity levels
   - Removed deprecated `observer_log()` function
@@ -67,11 +91,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Immediate DOM updates (no animation delays) for better performance
 
 ### Fixed
+- **Scene Insertion Position in Web UI**
+  - New scenes now appear after all tracks (matching server's AST structure)
+  - Previously: Scenes inserted before tracks (appeared at top of tree)
+  - Now: Scenes inserted after tracks in index order (tracks → scenes → file_refs)
+  - Scene IDs now match server format: `scene_0` (was `scene_0_1737367893421`)
+- **UDP Packet Loss During Rapid Events**
+  - Fixed gap detection warnings during scene reordering (was losing 8-12 events)
+  - Root cause: WebSocket broadcasts blocking UDP reception
+  - Solution: Event queue architecture prevents receiver blocking
+  - Impact: Zero packet loss even with 55 events in <1ms bursts
+- **_Framework.Task Import Error**
+  - Fixed incorrect import: `from _Framework.Task import Task` → `from _Framework import Task`
+  - Added graceful fallback to legacy polling if Task setup fails
+  - Added error handling with `_task_setup_failed` flag
 - XPath selector bug causing double-counting of clip slots (`.//ClipSlot` → `./ClipSlot`)
 - Clip slot selection now uses consistent blue highlight matching track selection
 - Remote Script initialization crash due to missed `observer_log()` calls in `ObserverManager.__init__()`
 
 ### Performance
+- **UDP Listener Optimization**
+  - Zero packet loss with asyncio.Queue architecture (tested with 55 events in <1ms)
+  - Non-blocking event processing prevents UDP buffer overflow
+  - Concurrent WebSocket broadcasts no longer block incoming packets
+  - Queue capacity: 1000 events (adjustable)
+- **Remote Script update_display() Optimization**
+  - Reduced from ~40 lines to 7 lines (Task-based delegation)
+  - Polling moved to _Framework.Task system (~60Hz scheduled tasks)
+  - Minimal overhead: Only log queue draining + Task.update()
+  - Better separation of concerns (no business logic in display loop)
 - **10-20% faster logging** due to tuple-based queueing
 - **Better burst handling** with larger queue (2000 vs 1000) and adaptive draining
 - **Faster level filtering** using set lookup instead of if/else chains

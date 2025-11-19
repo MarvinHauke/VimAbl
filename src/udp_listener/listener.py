@@ -123,17 +123,28 @@ class UDPListener:
         self.socket: Optional[socket.socket] = None
         self.sequence_tracker = SequenceTracker()
 
+        # Event queue for non-blocking processing
+        # This prevents slow WebSocket broadcasts from blocking UDP receives
+        self._event_queue: asyncio.Queue = None
+        self._processor_task: Optional[asyncio.Task] = None
+
         # Statistics
         self.stats = {
             "packets_received": 0,
             "packets_processed": 0,
             "packets_dropped": 0,
-            "parse_errors": 0
+            "parse_errors": 0,
+            "queue_size": 0,
+            "queue_max": 0
         }
 
     async def start(self):
         """Start the UDP listener."""
         self.running = True
+
+        # Create event queue for non-blocking processing
+        # This prevents slow WebSocket broadcasts from blocking UDP receives
+        self._event_queue = asyncio.Queue(maxsize=1000)
 
         # Create UDP socket
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -143,12 +154,31 @@ class UDPListener:
 
         logger.info(f"UDP listener started on {self.host}:{self.port}")
 
+        # Start event processor task
+        self._processor_task = asyncio.create_task(self._event_processor())
+
         # Start receive loop
         await self._receive_loop()
 
     async def stop(self):
         """Stop the UDP listener."""
         self.running = False
+
+        # Cancel event processor task
+        if self._processor_task:
+            self._processor_task.cancel()
+            try:
+                await self._processor_task
+            except asyncio.CancelledError:
+                pass
+            self._processor_task = None
+
+        # Log queue stats before shutting down
+        if self._event_queue:
+            queue_size = self._event_queue.qsize()
+            if queue_size > 0:
+                logger.warning(f"Shutting down with {queue_size} events still in queue")
+
         if self.socket:
             self.socket.close()
             self.socket = None
@@ -164,7 +194,7 @@ class UDPListener:
                 data, addr = await loop.sock_recvfrom(self.socket, 4096)
                 self.stats["packets_received"] += 1
 
-                # Process packet
+                # Process packet (parse and queue for processing)
                 await self._process_packet(data, addr)
 
             except asyncio.CancelledError:
@@ -172,6 +202,45 @@ class UDPListener:
             except Exception as e:
                 logger.error(f"Error in receive loop: {e}")
                 await asyncio.sleep(0.1)
+
+    async def _event_processor(self):
+        """
+        Process events from the queue in a separate task.
+
+        This runs concurrently with UDP reception, preventing slow WebSocket
+        broadcasts from blocking UDP packet receives.
+        """
+        logger.info("Event processor started")
+
+        while self.running:
+            try:
+                # Get event from queue (with timeout to check running flag)
+                try:
+                    event_data = await asyncio.wait_for(
+                        self._event_queue.get(),
+                        timeout=0.1
+                    )
+                except asyncio.TimeoutError:
+                    continue
+
+                # Unpack event data
+                event_path, event_args, seq_num, timestamp = event_data
+
+                # Call the event callback (may be slow due to WebSocket broadcast)
+                if self.event_callback:
+                    await self.event_callback(event_path, event_args, seq_num, timestamp)
+
+                # Update queue stats
+                self.stats["queue_size"] = self._event_queue.qsize()
+
+            except asyncio.CancelledError:
+                logger.info("Event processor cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in event processor: {e}")
+                await asyncio.sleep(0.1)
+
+        logger.info("Event processor stopped")
 
     async def _process_packet(self, data: bytes, addr: tuple):
         """
@@ -210,9 +279,16 @@ class UDPListener:
                 if seq_status["gap_size"] > 0:
                     logger.warning(f"Gap of {seq_status['gap_size']} messages detected at seq {seq_num}")
 
-                # Forward to event callback
-                if self.event_callback:
-                    await self.event_callback(event_path, event_args, seq_num, timestamp)
+                # Queue event for processing (non-blocking)
+                # This prevents slow WebSocket broadcasts from blocking UDP receives
+                try:
+                    self._event_queue.put_nowait((event_path, event_args, seq_num, timestamp))
+                    self.stats["queue_size"] = self._event_queue.qsize()
+                    self.stats["queue_max"] = max(self.stats["queue_max"], self.stats["queue_size"])
+                except asyncio.QueueFull:
+                    logger.error(f"Event queue full! Dropping event {event_path} seq={seq_num}")
+                    self.stats["packets_dropped"] += 1
+                    return
 
                 self.stats["packets_processed"] += 1
 

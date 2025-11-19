@@ -678,7 +678,31 @@ class TrackObserver:
         """Called when the clip_slots list itself changes (scenes added/removed)."""
         try:
             self.log(f"Track {self.track_index} clip_slots list changed (scenes added/removed)")
-            # Re-observe all clip slots
+
+            # Detect which clip_slots are new by comparing to stored state
+            old_slot_count = len([k for k in self.clip_slot_states.keys() if k[0] == self.track_index])
+            new_slot_count = len(self.track.clip_slots)
+
+            # Send initial state events for new clip_slots
+            if new_slot_count > old_slot_count:
+                for scene_idx in range(old_slot_count, new_slot_count):
+                    if scene_idx < len(self.track.clip_slots):
+                        clip_slot = self.track.clip_slots[scene_idx]
+
+                        # Send clip_slot creation event
+                        self.sender.send_event("/live/clip_slot/created",
+                                             self.track_index, scene_idx,
+                                             clip_slot.has_clip, clip_slot.has_stop_button,
+                                             clip_slot.playing_status)
+                        self.log(f"Clip slot created at [{self.track_index},{scene_idx}]")
+
+                        # If it has a clip, send clip added event
+                        if clip_slot.has_clip and clip_slot.clip:
+                            clip_name = str(clip_slot.clip.name) if hasattr(clip_slot.clip, 'name') else ""
+                            self.sender.send_event("/live/clip/added", self.track_index, scene_idx, clip_name)
+                            self.log(f"Clip added at [{self.track_index},{scene_idx}]: '{clip_name}'")
+
+            # Re-observe all clip slots (this will update stored states)
             self._observe_clip_slots()
         except Exception as e:
             self.log(f"Error handling clip_slots change: {e}")
@@ -1162,12 +1186,45 @@ class ObserverManager:
                 added_count = new_count - old_count
                 self.log(f"Scenes added: {added_count} (total: {new_count})")
 
-                # Send event for each added scene
-                for scene_idx in range(old_count, new_count):
-                    scene = new_scenes[scene_idx]
-                    name = str(scene.name) if hasattr(scene, 'name') else f"Scene {scene_idx + 1}"
-                    self.sender.send_event("/live/scene/added", scene_idx, name)
-                    self.log(f"Scene added: {scene_idx} '{name}'")
+                # Find insertion point by comparing object references
+                # This handles both appending at end and inserting in middle
+                insertion_indices = []
+
+                if hasattr(self, '_scene_objects') and self._scene_objects:
+                    old_scenes = self._scene_objects
+
+                    # Find where new scenes were inserted by comparing object references
+                    for new_idx, new_scene in enumerate(new_scenes):
+                        # Check if this scene existed in old list
+                        if new_scene not in old_scenes:
+                            insertion_indices.append(new_idx)
+
+                    # Send added events for new scenes
+                    for scene_idx in insertion_indices:
+                        scene = new_scenes[scene_idx]
+                        name = str(scene.name) if hasattr(scene, 'name') else f"Scene {scene_idx + 1}"
+                        self.sender.send_event("/live/scene/added", scene_idx, name)
+                        self.log(f"Scene added: {scene_idx} '{name}'")
+
+                    # If scenes were inserted (not just appended), send reorder events
+                    # for all scenes that got pushed down
+                    min_insertion_idx = min(insertion_indices) if insertion_indices else old_count
+                    if min_insertion_idx < old_count:
+                        # Scenes were inserted in the middle, need to reorder everything after
+                        for idx in range(min_insertion_idx, new_count):
+                            if idx not in insertion_indices:
+                                # This is an existing scene that got pushed down
+                                scene = new_scenes[idx]
+                                name = str(scene.name) if hasattr(scene, 'name') else f"Scene {idx + 1}"
+                                self.sender.send_event("/live/scene/reordered", idx, name)
+                                self.log(f"Scene {idx} reordered (pushed down): '{name}'")
+                else:
+                    # Fallback: assume scenes added at end
+                    for scene_idx in range(old_count, new_count):
+                        scene = new_scenes[scene_idx]
+                        name = str(scene.name) if hasattr(scene, 'name') else f"Scene {scene_idx + 1}"
+                        self.sender.send_event("/live/scene/added", scene_idx, name)
+                        self.log(f"Scene added: {scene_idx} '{name}'")
 
             elif new_count < old_count:
                 # Scenes removed
