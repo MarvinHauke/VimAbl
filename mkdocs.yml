@@ -154,6 +154,7 @@ nav:
       - Lua API: api-reference/lua-api.md
       - OSC Protocol: api-reference/osc-protocol.md
       - ClipSlot Observables: api-reference/clipslot-observables.md
+      - Logging: api-reference/logging.md
   - Development:
       - Extending VimAbl: development/extending.md
       - Performance Tuning: development/performance-tuning.md

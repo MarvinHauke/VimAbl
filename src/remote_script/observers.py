@@ -11,28 +11,8 @@ Critical errors will still be logged regardless of setting.
 
 import time
 
-# Import centralized logging configuration
-# Note: ENABLE_OBSERVER_LOGGING is kept for backward compatibility
-# To toggle logging globally, edit logging_config.py
-try:
-    from .logging_config import ENABLE_LOGGING as ENABLE_OBSERVER_LOGGING
-except ImportError:
-    # Fallback if logging_config.py doesn't exist yet
-    ENABLE_OBSERVER_LOGGING = True
-
-def observer_log(message: str, force: bool = False):
-    """
-    Log message if logging is enabled.
-    
-    DEPRECATED: Use logging_config.log() instead.
-    Kept for backward compatibility with existing observer code.
-    
-    Args:
-        message: Message to log
-        force: If True, log even if ENABLE_OBSERVER_LOGGING is False (for critical errors)
-    """
-    if ENABLE_OBSERVER_LOGGING or force:
-        print(message)
+# Import centralized logging
+from .logging_config import log
 
 
 class ViewObservers:
@@ -772,13 +752,14 @@ class TrackObserver:
 
     def log(self, message: str, force: bool = False):
         """
-        Log message.
+        Log message using centralized logging.
 
         Args:
             message: Message to log
-            force: If True, log even if ENABLE_OBSERVER_LOGGING is False (for critical errors)
+            force: If True, log even if logging is disabled (for critical errors)
         """
-        observer_log(f"[TrackObserver] {message}", force=force)
+        level = "ERROR" if force else "INFO"
+        log("TrackObserver", message, level=level, force=force)
 
 
 class DeviceObserver:
@@ -851,13 +832,14 @@ class DeviceObserver:
 
     def log(self, message: str, force: bool = False):
         """
-        Log message.
+        Log message using centralized logging.
 
         Args:
             message: Message to log
-            force: If True, log even if ENABLE_OBSERVER_LOGGING is False (for critical errors)
+            force: If True, log even if logging is disabled (for critical errors)
         """
-        observer_log(f"[DeviceObserver] {message}", force=force)
+        level = "ERROR" if force else "INFO"
+        log("DeviceObserver", message, level=level, force=force)
 
 
 class TransportObserver:
@@ -928,13 +910,110 @@ class TransportObserver:
 
     def log(self, message: str, force: bool = False):
         """
-        Log message.
+        Log message using centralized logging.
 
         Args:
             message: Message to log
-            force: If True, log even if ENABLE_OBSERVER_LOGGING is False (for critical errors)
+            force: If True, log even if logging is disabled (for critical errors)
         """
-        observer_log(f"[TransportObserver] {message}", force=force)
+        level = "ERROR" if force else "INFO"
+        log("TransportObserver", message, level=level, force=force)
+
+
+class SceneObserver:
+    """
+    Observes a single scene for name changes and triggered state.
+    
+    Sends UDP/OSC events:
+    - /live/scene/renamed <scene_idx> <name>
+    - /live/scene/triggered <scene_idx>
+    - /live/scene/color <scene_idx> <color_rgb>
+    """
+
+    def __init__(self, scene, scene_index, udp_sender):
+        """
+        Initialize scene observer.
+
+        Args:
+            scene: Live.Scene.Scene object
+            scene_index: Scene index (0-based)
+            udp_sender: UDPSender instance
+        """
+        self.scene = scene
+        self.scene_index = scene_index
+        self.sender = udp_sender
+
+        try:
+            # Observe name changes
+            if not scene.name_has_listener(self._on_name_changed):
+                scene.add_name_listener(self._on_name_changed)
+
+            # Observe color changes
+            if hasattr(scene, 'color') and not scene.color_has_listener(self._on_color_changed):
+                scene.add_color_listener(self._on_color_changed)
+
+            # Observe triggered state
+            if not scene.is_triggered_has_listener(self._on_triggered_changed):
+                scene.add_is_triggered_listener(self._on_triggered_changed)
+
+            self.log(f"Scene {scene_index}: Initialized (name='{scene.name}')")
+
+        except Exception as e:
+            self.log(f"Scene {scene_index}: ERROR in __init__: {e}", force=True)
+
+    def _on_name_changed(self):
+        """Called when scene name changes."""
+        try:
+            name = str(self.scene.name)
+            self.sender.send_event("/live/scene/renamed", self.scene_index, name)
+            self.log(f"Scene {self.scene_index} renamed: '{name}'")
+        except Exception as e:
+            self.log(f"Error handling scene name change: {e}", force=True)
+
+    def _on_color_changed(self):
+        """Called when scene color changes."""
+        try:
+            color_rgb = int(self.scene.color)
+            self.sender.send_event("/live/scene/color", self.scene_index, color_rgb)
+            self.log(f"Scene {self.scene_index} color changed: 0x{color_rgb:06X}")
+        except Exception as e:
+            self.log(f"Error handling scene color change: {e}", force=True)
+
+    def _on_triggered_changed(self):
+        """Called when scene is triggered."""
+        try:
+            is_triggered = bool(self.scene.is_triggered)
+            if is_triggered:
+                self.sender.send_event("/live/scene/triggered", self.scene_index)
+                self.log(f"Scene {self.scene_index} triggered")
+        except Exception as e:
+            self.log(f"Error handling scene trigger: {e}", force=True)
+
+    def unregister(self):
+        """Unregister all listeners."""
+        try:
+            if self.scene.name_has_listener(self._on_name_changed):
+                self.scene.remove_name_listener(self._on_name_changed)
+
+            if hasattr(self.scene, 'color') and self.scene.color_has_listener(self._on_color_changed):
+                self.scene.remove_color_listener(self._on_color_changed)
+
+            if self.scene.is_triggered_has_listener(self._on_triggered_changed):
+                self.scene.remove_is_triggered_listener(self._on_triggered_changed)
+
+        except Exception as e:
+            self.log(f"Error unregistering scene observer: {e}", force=True)
+
+    def log(self, message: str, force: bool = False):
+        """
+        Log message using centralized logging.
+
+        Args:
+            message: Message to log
+            force: If True, log even if logging is disabled (for critical errors)
+        """
+        level = "ERROR" if force else "INFO"
+        log("SceneObserver", message, level=level, force=force)
 
 
 class ObserverManager:
@@ -952,13 +1031,21 @@ class ObserverManager:
             song: Live.Song.Song object
             udp_sender: UDPSender instance
         """
+        log("ObserverManager", "Initializing...", level="INFO", force=True)
+        
         self.song = song
         self.sender = udp_sender
         self.debouncer = Debouncer()
 
         self.track_observers = []
+        self.scene_observers = []
         self.transport_observer = None
         self.enabled = False
+
+        # Track scene count and objects for detecting add/remove/reorder
+        self._scene_objects = list(song.scenes)
+        self.scene_count = len(self._scene_objects)
+        log("ObserverManager", f"Initial scene count: {self.scene_count}", level="INFO", force=True)
 
     def start(self):
         """Start observing all changes."""
@@ -983,7 +1070,7 @@ class ObserverManager:
             self.log(f"Observers refreshed: {len(self.track_observers)} tracks")
 
     def _register_all_observers(self):
-        """Register observers for all tracks and transport."""
+        """Register observers for all tracks, scenes, and transport."""
         try:
             # Transport observer
             self.transport_observer = TransportObserver(self.song, self.sender,
@@ -1002,11 +1089,29 @@ class ObserverManager:
 
             self.log(f"[ObserverManager] Created {track_count} TrackObservers")
 
+            # Scene observers
+            scene_count = 0
+            for scene_idx, scene in enumerate(self.song.scenes):
+                try:
+                    obs = SceneObserver(scene, scene_idx, self.sender)
+                    self.scene_observers.append(obs)
+                    scene_count += 1
+                except Exception as scene_err:
+                    self.log(f"[ObserverManager] ERROR creating SceneObserver {scene_idx}: {scene_err}", force=True)
+
+            self.log(f"[ObserverManager] Created {scene_count} SceneObservers")
+
             # Listen for track list changes
             if self.song.tracks_has_listener(self._on_tracks_changed):
                 self.song.remove_tracks_listener(self._on_tracks_changed)
             self.song.add_tracks_listener(self._on_tracks_changed)
             self.log("[ObserverManager] Added tracks_changed listener")
+
+            # Listen for scene list changes
+            if self.song.scenes_has_listener(self._on_scenes_changed):
+                self.song.remove_scenes_listener(self._on_scenes_changed)
+            self.song.add_scenes_listener(self._on_scenes_changed)
+            self.log("[ObserverManager] Added scenes_changed listener")
 
         except Exception as e:
             self.log(f"Error registering observers: {e}", force=True)
@@ -1024,9 +1129,18 @@ class ObserverManager:
                 obs.unregister()
             self.track_observers = []
 
+            # Scene observers
+            for obs in self.scene_observers:
+                obs.unregister()
+            self.scene_observers = []
+
             # Tracks listener
             if self.song.tracks_has_listener(self._on_tracks_changed):
                 self.song.remove_tracks_listener(self._on_tracks_changed)
+
+            # Scenes listener
+            if self.song.scenes_has_listener(self._on_scenes_changed):
+                self.song.remove_scenes_listener(self._on_scenes_changed)
 
         except Exception as e:
             self.log(f"Error unregistering observers: {e}")
@@ -1036,30 +1150,126 @@ class ObserverManager:
         self.log("Tracks list changed")
         self.refresh()
 
+    def _on_scenes_changed(self):
+        """Called when scenes are added/removed/reordered."""
+        try:
+            new_scenes = list(self.song.scenes)
+            new_count = len(new_scenes)
+            old_count = self.scene_count
+
+            if new_count > old_count:
+                # Scenes added
+                added_count = new_count - old_count
+                self.log(f"Scenes added: {added_count} (total: {new_count})")
+
+                # Send event for each added scene
+                for scene_idx in range(old_count, new_count):
+                    scene = new_scenes[scene_idx]
+                    name = str(scene.name) if hasattr(scene, 'name') else f"Scene {scene_idx + 1}"
+                    self.sender.send_event("/live/scene/added", scene_idx, name)
+                    self.log(f"Scene added: {scene_idx} '{name}'")
+
+            elif new_count < old_count:
+                # Scenes removed
+                removed_count = old_count - new_count
+                self.log(f"Scenes removed: {removed_count} (total: {new_count})")
+
+                # Find which scenes were removed by comparing object references
+                if hasattr(self, '_scene_objects'):
+                    old_scenes = self._scene_objects
+                    # Find removed scene indices
+                    for old_idx, old_scene in enumerate(old_scenes):
+                        if old_scene not in new_scenes:
+                            self.sender.send_event("/live/scene/removed", old_idx)
+                            self.log(f"Scene removed: {old_idx}")
+                else:
+                    # Fallback: send events for the last N scenes
+                    for scene_idx in range(new_count, old_count):
+                        self.sender.send_event("/live/scene/removed", scene_idx)
+                        self.log(f"Scene removed: {scene_idx}")
+
+            else:
+                # Count unchanged - check for reordering
+                # Compare scene object references to detect reordering
+                if hasattr(self, '_scene_objects'):
+                    old_scenes = self._scene_objects
+                    # Check if any scene moved
+                    reordered = False
+                    for idx, scene in enumerate(new_scenes):
+                        if idx < len(old_scenes) and scene != old_scenes[idx]:
+                            reordered = True
+                            break
+
+                    if reordered:
+                        self.log(f"Scenes reordered (total: {new_count})")
+                        # Send reorder event with full scene list
+                        scene_ids = []
+                        for idx, scene in enumerate(new_scenes):
+                            name = str(scene.name) if hasattr(scene, 'name') else f"Scene {idx + 1}"
+                            scene_ids.append((idx, name))
+
+                        # Send individual events for each scene's new position
+                        for idx, name in scene_ids:
+                            self.sender.send_event("/live/scene/reordered", idx, name)
+                            self.log(f"Scene {idx} reordered: '{name}'")
+
+            # Cache scene objects for reorder detection
+            self._scene_objects = new_scenes
+
+            # Update tracked count
+            self.scene_count = new_count
+
+            # Refresh all observers (will re-create scene observers)
+            self.refresh()
+
+        except Exception as e:
+            self.log(f"Error in _on_scenes_changed: {e}", force=True)
+
     def update(self):
         """
         Update method - should be called periodically (e.g., from update_display()).
 
-        Checks for trailing edge events that need to be sent.
-        This ensures final values are always sent after user stops changing parameters.
+        Checks for:
+        1. Trailing edge events from debouncer
+        2. Scene count changes (Live API doesn't provide reliable listener!)
         """
         if self.enabled:
             self.debouncer.check_trailing_edge()
+            
+            # Poll for scene count changes (no reliable listener exists in Live API)
+            try:
+                new_count = len(list(self.song.scenes))
+                
+                # Debug: log every 60 polls (once per second at 60Hz)
+                if not hasattr(self, '_poll_counter'):
+                    self._poll_counter = 0
+                self._poll_counter += 1
+                
+                if self._poll_counter % 60 == 0:
+                    log("ObserverManager", f"Scene poll: {self.scene_count} vs {new_count}", level="INFO", force=True)
+
+                if new_count != self.scene_count:
+                    log("ObserverManager", f"Scene count changed: {self.scene_count} -> {new_count}", level="WARN", force=True)
+                    self._on_scenes_changed()
+            except Exception as e:
+                log("ObserverManager", f"ERROR polling scene count: {e}", level="ERROR", force=True)
 
     def get_stats(self):
         """Get observer statistics."""
         return {
             "enabled": self.enabled,
             "track_count": len(self.track_observers),
+            "scene_count": len(self.scene_observers),
             "has_transport": self.transport_observer is not None
         }
 
     def log(self, message, force: bool = False):
         """
-        Log message.
+        Log message using centralized logging.
 
         Args:
             message: Message to log
-            force: If True, log even if ENABLE_OBSERVER_LOGGING is False (for critical errors)
+            force: If True, log even if logging is disabled (for critical errors)
         """
-        observer_log("[ObserverManager] " + str(message), force=force)
+        level = "ERROR" if force else "INFO"
+        log("ObserverManager", str(message), level=level, force=force)

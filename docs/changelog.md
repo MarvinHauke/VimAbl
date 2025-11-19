@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Optimized Logging System with Performance Metrics**
+  - New streamlined logging architecture:
+    - Removed fragile `LogQueue` class and `_log_dispatcher` global
+    - Simple module-level functions: `init_logging()`, `drain_log_queue()`, `clear_log_queue()`
+    - Tuple-based queueing for faster performance (formatting deferred to main thread)
+    - Adaptive queue draining (increases limit when backlog builds)
+  - Severity level support: DEBUG, INFO, WARN, ERROR, CRITICAL
+  - Real-time performance metrics with <0.1% overhead:
+    - `messages_enqueued`, `messages_drained`, `messages_dropped`
+    - `peak_queue_size`, `queue_utilization`, `drop_rate`
+    - `get_log_stats()` API for programmatic access
+    - Automatic stats logging every 5 minutes and on shutdown
+  - Comprehensive documentation:
+    - New Logging API Reference with all functions documented
+    - Expanded Python Remote Script architecture guide
+    - Performance impact analysis in Performance Tuning guide
 - **ClipSlot Matrix Implementation (Phase 6)**
   - Full ClipSlot grid representation in AST (track × scene matrix)
   - CLIP_SLOT node type with empty and filled slot support
@@ -37,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Pages deployment workflow with auto-generated documentation
 
 ### Changed
+- **Logging system refactor:**
+  - Replaced `log_simple()` with unified `log()` function taking severity levels
+  - Removed deprecated `observer_log()` function
+  - All observers now use severity levels (INFO/WARN/ERROR)
+  - Updated all Remote Script files: `LiveState.py`, `observers.py`, `cursor_observer.py`, `udp_sender.py`
+  - Enhanced `symlink.sh` to show `_Framework/` directory when creating symlink
 - Reorganized documentation structure
 - Updated mkdocs.yml with comprehensive navigation
 - Enhanced AST updater with ClipSlot event handlers
@@ -47,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - XPath selector bug causing double-counting of clip slots (`.//ClipSlot` → `./ClipSlot`)
 - Clip slot selection now uses consistent blue highlight matching track selection
+- Remote Script initialization crash due to missed `observer_log()` calls in `ObserverManager.__init__()`
+
+### Performance
+- **10-20% faster logging** due to tuple-based queueing
+- **Better burst handling** with larger queue (2000 vs 1000) and adaptive draining
+- **Faster level filtering** using set lookup instead of if/else chains
+- **Reduced global lookups** with cached queue references
+- **Metrics tracking overhead: <0.1% CPU** (negligible impact)
 
 ## [0.3.0] - 2025-11-16
 

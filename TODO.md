@@ -866,6 +866,89 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [ ] Verify WebSocket broadcasts update
   - [ ] Check Svelte UI reflects changes
 
+### Phase 5j: Optimize update_display() Loop ⚡️
+
+**Priority: HIGH**
+**Goal: Refactor update_display() for optimal performance in heavy Ableton projects**
+
+**Context**: The `update_display()` method in `LiveState.py` is called by Ableton Live's main loop at ~60Hz. This is the **hottest code path** in the Remote Script and must be extremely lightweight to avoid audio dropouts.
+
+**Current Issues**:
+- Polling logic inside update_display() (cursor observer, debouncer checks)
+- Stats calculation every frame (even when not logging)
+- Direct calls to `udp_observer_manager.update()` instead of using _Framework.Task
+
+**Optimal Implementation**:
+```python
+def update_display(self):
+    """
+    The fastest possible update loop for a heavy Ableton Remote Script.
+
+    Responsibilities (only):
+    - Drain logger queue (cheap, micro-optimized)
+    - Let _Framework.Task run its scheduled tasks
+    - DO NOT do any logic, debounce, polling, or model building here
+    """
+
+    # 1. Drain any queued log entries (micro-optimized queue)
+    try:
+        from .logging_config import drain_log_queue
+        drain_log_queue()
+    except Exception:
+        pass  # Logging must never break the display loop
+
+    # 2. Run Ableton's normal task system (critical!)
+    super().update_display()
+
+    # 3. (Optional) VERY light periodic heartbeat / debugger
+    # This must be extremely cheap and non-allocating.
+    # Example: a simple counter to confirm Live is running
+    # self._frame += 1
+```
+
+**Key Principles**:
+- ✅ update_display() must be tiny and fast
+- ✅ Logger drains only here (thread-safe)
+- ✅ All debounce, batching, scheduling → _Framework.Task
+- ✅ Never poll inside update_display()
+- ✅ Never call Live API inside update_display()
+- ✅ Always call super().update_display()
+
+**Implementation Tasks**:
+- [ ] Refactor `LiveState.update_display()` to minimal implementation
+  - [ ] Keep only logger drain and super() call
+  - [ ] Remove all polling logic
+  - [ ] Remove stats calculation
+  - [ ] Remove direct observer/debouncer calls
+- [ ] Move polling to _Framework.Task scheduler
+  - [ ] Create Task for cursor_observer.update() (60Hz)
+  - [ ] Create Task for udp_observer_manager.update() (60Hz)
+  - [ ] Create Task for stats logging (every 5 minutes)
+- [ ] Update ObserverManager.update() documentation
+  - [ ] Clarify that it should be called via Task, not update_display()
+- [ ] Update CursorObserver.update() documentation
+  - [ ] Same clarification
+- [ ] Test performance
+  - [ ] Measure CPU usage before/after
+  - [ ] Verify no audio dropouts with heavy projects
+  - [ ] Confirm all functionality still works
+  - [ ] Test with 50+ tracks and 200+ devices
+
+**Expected Benefits**:
+- 🚀 Reduced CPU usage in update_display() loop
+- 🎯 Better separation of concerns (Task system handles scheduling)
+- 🔧 Easier to debug (less code in hot path)
+- 📊 More predictable performance
+- 🎵 No audio dropouts even with heavy projects
+
+**Documentation**:
+- [ ] Add performance tuning guide to `docs/development/performance-tuning.md`
+- [ ] Document update_display() best practices
+- [ ] Add Task scheduling examples
+- [ ] Create before/after performance comparison
+
+**Estimated Time**: 2-3 hours
+
 ---
 
 ## Phase 6: ClipSlot Matrix Implementation

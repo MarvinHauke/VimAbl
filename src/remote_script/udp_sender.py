@@ -24,8 +24,8 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(__file__))
     from osc import build_sequenced_message
     # Fallback logging function for standalone testing
-    def log(prefix: str, message: str, force: bool = False):
-        print(f"[{prefix}] {message}")
+    def log(component: str, message: str, level: str = "INFO", force: bool = False):
+        print(f"[{level}] [{component}] {message}")
 
 
 class UDPSender:
@@ -103,6 +103,10 @@ class UDPSender:
             self.seq_num += 1
             self.sent_count += 1
 
+            # Log scene events for debugging
+            if "/scene/" in event_path:
+                log("UDPSender", f"Sent: {event_path} {args}", level="INFO", force=True)
+
             return True
 
         except Exception as e:
@@ -170,9 +174,10 @@ class UDPSender:
 
         Args:
             message: Message to log
-            force: If True, log even if ENABLE_LOGGING is False (for critical errors)
+            force: If True, log even if logging is disabled (for critical errors)
         """
-        log("UDPSender", message, force=force)
+        level = "ERROR" if force else "INFO"
+        log("UDPSender", message, level=level, force=force)
 
 
 # Singleton instance (initialized by LiveState.py)

@@ -113,7 +113,7 @@ class SessionCursorObserver:
                 self.song.add_scenes_listener(self._on_scenes_changed)
 
         except Exception as e:
-            log("CursorObserver", f"Error adding listeners: {e}")
+            log("CursorObserver", f"Error adding listeners: {e}", level="ERROR")
 
     def _remove_listeners(self):
         """Remove all observers - call on cleanup."""
@@ -136,7 +136,7 @@ class SessionCursorObserver:
 
             log("CursorObserver", "Removed all listeners")
         except Exception as e:
-            log("CursorObserver", f"Error removing listeners: {e}")
+            log("CursorObserver", f"Error removing listeners: {e}", level="ERROR")
 
     # =========================================================================
     # Listener Callbacks - MUST BE NON-BLOCKING
@@ -212,7 +212,7 @@ class SessionCursorObserver:
                     
         except (ValueError, AttributeError) as e:
             # Track not in list (edge case: track was just deleted)
-            log("CursorObserver", f"Track index lookup failed: {e}")
+            log("CursorObserver", f"Track index lookup failed: {e}", level="ERROR")
             self._selected_track_idx = None
             self._selected_track = None
 
@@ -228,7 +228,7 @@ class SessionCursorObserver:
                 self._selected_scene_idx = self._scenes_list.index(scene)
                 self._scene_changed = True
         except (ValueError, AttributeError) as e:
-            log("CursorObserver", f"Scene index lookup failed: {e}")
+            log("CursorObserver", f"Scene index lookup failed: {e}", level="ERROR")
             self._selected_scene_idx = None
 
     def _on_tracks_changed(self):
@@ -327,7 +327,7 @@ class SessionCursorObserver:
 
         except Exception as e:
             # Log but don't crash - this runs at 60Hz
-            log("CursorObserver", f"Error checking clip slot: {e}")
+            log("CursorObserver", f"Error checking clip slot: {e}", level="ERROR")
 
     # =========================================================================
     # UDP Event Senders - Non-blocking, fast
@@ -348,7 +348,7 @@ class SessionCursorObserver:
 
             log("CursorObserver", "Sent initial cursor state")
         except Exception as e:
-            log("CursorObserver", f"Error sending initial state: {e}")
+            log("CursorObserver", f"Error sending initial state: {e}", level="ERROR")
 
     def _send_track_selection(self):
         """
@@ -394,7 +394,7 @@ class SessionCursorObserver:
                 log("CursorObserver", f"Track selected: {track_idx}")
                 
         except Exception as e:
-            log("CursorObserver", f"Error sending track selection: {e}")
+            log("CursorObserver", f"Error sending track selection: {e}", level="ERROR")
 
     def _send_track_color_update(self):
         """
@@ -417,10 +417,10 @@ class SessionCursorObserver:
                 self.sender.send_event("/live/track/color", track_idx, color_rgb)
                 log("CursorObserver", f"Track {track_idx} color changed: 0x{color_rgb:06X}")
             except (AttributeError, ValueError) as e:
-                log("CursorObserver", f"Error getting track color: {e}")
+                log("CursorObserver", f"Error getting track color: {e}", level="ERROR")
                 
         except Exception as e:
-            log("CursorObserver", f"Error sending track color update: {e}")
+            log("CursorObserver", f"Error sending track color update: {e}", level="ERROR")
 
     def _send_scene_selection(self):
         """
@@ -432,7 +432,7 @@ class SessionCursorObserver:
             self.sender.send_event("/live/cursor/scene", self._selected_scene_idx)
             log("CursorObserver", f"Scene selected: {self._selected_scene_idx}")
         except Exception as e:
-            log("CursorObserver", f"Error sending scene selection: {e}")
+            log("CursorObserver", f"Error sending scene selection: {e}", level="ERROR")
 
     def _send_clip_slot_state(self, slot, track_idx, scene_idx):
         """
@@ -464,7 +464,7 @@ class SessionCursorObserver:
             log("CursorObserver", f"Clip slot [{track_idx},{scene_idx}]: {state}")
 
         except Exception as e:
-            log("CursorObserver", f"Error sending clip slot state: {e}")
+            log("CursorObserver", f"Error sending clip slot state: {e}", level="ERROR")
 
     # =========================================================================
     # Cleanup
