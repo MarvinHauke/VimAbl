@@ -1561,6 +1561,45 @@ In `src/web/frontend/package.json`:
 
 ---
 
+## Future Improvements & Refactoring
+
+- [ ] Refactor XML export to use AppleScript instead of TCP command for faster startup.
+
+- [ ] Refactor `project_watcher.lua` to support instant startup.
+
+    **Implementation Plan:**
+
+    **Part 1: Investigate AppleScript-based Project Path Detection**
+    - **Goal:** Find a reliable AppleScript command to get the current project path from Ableton Live.
+    - **Method:**
+        - Use `hs.applescript.run()` to query the `path of document 1` from the active Ableton Live process.
+        - Handle cases where no project is open or Ableton is not running.
+    - **Deliverable:** A new function in `src/hammerspoon/live_state.lua` called `getCurrentProjectPathWithAppleScript()`.
+
+    **Part 2: Implement Proactive Startup Logic**
+    - **Goal:** Modify the startup sequence to proactively check for projects on app launch/activation.
+    - **Method:**
+        - In `src/hammerspoon/app_watcher.lua`, on `launched` and `activated` events, call the new AppleScript function to get the project path.
+        - If a path is found, check for the existence of a corresponding `.xml` file in the `.vimabl` directory.
+        - If the XML exists, call a new function `websocket_manager.startFromProject(project_path)` that starts the server without triggering a new XML export.
+    - **Deliverable:** Modified `app_watcher.lua` and `websocket_manager.lua`.
+
+    **Part 3: Refactor `project_watcher.lua`**
+    - **Goal:** Adapt the project watcher to work with the new proactive startup logic.
+    - **Method:**
+        - The "broad mode" watch will now primarily act as a fallback for when a project is saved for the very first time (i.e., no `.als` path exists on launch).
+        - When the proactive startup succeeds, `app_watcher` will now be responsible for telling `project_watcher` to start immediately in "narrow mode" on the detected project path.
+    - **Deliverable:** A more refined `project_watcher.lua` that can be started directly in narrow mode.
+
+    **Part 4: Testing**
+    - **Goal:** Ensure the new startup path is faster and the old path still works as a fallback.
+    - **Method:**
+        - **Test Case 1 (Fast Path):** Open an existing, already-saved project. Verify the VimAbl server starts immediately without needing to save the project.
+        - **Test Case 2 (Fallback Path):** Create a new, unsaved Ableton project. Verify that nothing happens on launch. Then, save the project for the first time and verify the server starts as it does now.
+        - **Test Case 3 (Subsequent Saves):** With the server running, save the project again. Verify the UI updates correctly (this ensures the watcher's monitoring capability is intact).
+
+---
+
 ## Reference Documents
 
 - `SVELTE_TREEVIEWER.md` - Original feature specification
