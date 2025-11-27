@@ -679,30 +679,12 @@ class TrackObserver:
         try:
             self.log(f"Track {self.track_index} clip_slots list changed (scenes added/removed)")
 
-            # Detect which clip_slots are new by comparing to stored state
-            old_slot_count = len([k for k in self.clip_slot_states.keys() if k[0] == self.track_index])
-            new_slot_count = len(self.track.clip_slots)
+            # Note: We do NOT send clip_slot/created events here anymore.
+            # The ObserverManager handles scene additions (both insert and append)
+            # and sends the corresponding clip_slot creation events with correct indices.
+            # This prevents duplicate/incorrect events when inserting scenes.
 
-            # Send initial state events for new clip_slots
-            if new_slot_count > old_slot_count:
-                for scene_idx in range(old_slot_count, new_slot_count):
-                    if scene_idx < len(self.track.clip_slots):
-                        clip_slot = self.track.clip_slots[scene_idx]
-
-                        # Send clip_slot creation event
-                        self.sender.send_event("/live/clip_slot/created",
-                                             self.track_index, scene_idx,
-                                             clip_slot.has_clip, clip_slot.has_stop_button,
-                                             clip_slot.playing_status)
-                        self.log(f"Clip slot created at [{self.track_index},{scene_idx}]")
-
-                        # If it has a clip, send clip added event
-                        if clip_slot.has_clip and clip_slot.clip:
-                            clip_name = str(clip_slot.clip.name) if hasattr(clip_slot.clip, 'name') else ""
-                            self.sender.send_event("/live/clip/added", self.track_index, scene_idx, clip_name)
-                            self.log(f"Clip added at [{self.track_index},{scene_idx}]: '{clip_name}'")
-
-            # Re-observe all clip slots (this will update stored states)
+            # Re-observe all clip slots (this will update stored states and re-attach listeners)
             self._observe_clip_slots()
         except Exception as e:
             self.log(f"Error handling clip_slots change: {e}")
@@ -1199,18 +1181,15 @@ class ObserverManager:
                         if new_scene not in old_scenes:
                             insertion_indices.append(new_idx)
 
-                    # Send added events for new scenes
-                    for scene_idx in insertion_indices:
-                        scene = new_scenes[scene_idx]
-                        name = str(scene.name) if hasattr(scene, 'name') else f"Scene {scene_idx + 1}"
-                        self.sender.send_event("/live/scene/added", scene_idx, name)
-                        self.log(f"Scene added: {scene_idx} '{name}'")
-
                     # If scenes were inserted (not just appended), send reorder events
                     # for all scenes that got pushed down
                     min_insertion_idx = min(insertion_indices) if insertion_indices else old_count
                     if min_insertion_idx < old_count:
                         # Scenes were inserted in the middle, need to reorder everything after
+                        # We iterate in reverse order (highest index first) to avoid collisions if we were doing local moves,
+                        # but since we send absolute new indices, the order matters less for the final state,
+                        # but matches Live's logic better.
+                        # Note: Live API scenes list is already updated at this point.
                         for idx in range(min_insertion_idx, new_count):
                             if idx not in insertion_indices:
                                 # This is an existing scene that got pushed down
@@ -1218,6 +1197,29 @@ class ObserverManager:
                                 name = str(scene.name) if hasattr(scene, 'name') else f"Scene {idx + 1}"
                                 self.sender.send_event("/live/scene/reordered", idx, name)
                                 self.log(f"Scene {idx} reordered (pushed down): '{name}'")
+                    
+                    # Manually send clip_slot/created for new scenes across ALL tracks
+                    # Done AFTER reordering to ensure slots at insertion indices are clear
+                    for scene_idx in insertion_indices:
+                        # Send scene/added event
+                        scene = new_scenes[scene_idx]
+                        name = str(scene.name) if hasattr(scene, 'name') else f"Scene {scene_idx + 1}"
+                        self.sender.send_event("/live/scene/added", scene_idx, name)
+                        self.log(f"Scene added: {scene_idx} '{name}'")
+
+                        for track_idx, track in enumerate(self.song.tracks):
+                            try:
+                                if scene_idx < len(track.clip_slots):
+                                    slot = track.clip_slots[scene_idx]
+                                    # 0=stopped, 1=playing, 2=triggered
+                                    status = slot.playing_status if hasattr(slot, 'playing_status') else 0
+                                    
+                                    self.sender.send_event("/live/clip_slot/created",
+                                                         track_idx, scene_idx,
+                                                         slot.has_clip, slot.has_stop_button,
+                                                         status)
+                            except Exception as e:
+                                self.log(f"Error sending manual clip_slot create for track {track_idx}: {e}", force=True)
                 else:
                     # Fallback: assume scenes added at end
                     for scene_idx in range(old_count, new_count):
@@ -1225,6 +1227,20 @@ class ObserverManager:
                         name = str(scene.name) if hasattr(scene, 'name') else f"Scene {scene_idx + 1}"
                         self.sender.send_event("/live/scene/added", scene_idx, name)
                         self.log(f"Scene added: {scene_idx} '{name}'")
+                        
+                        # Manually send clip_slot/created for this new scene across ALL tracks
+                        for track_idx, track in enumerate(self.song.tracks):
+                            try:
+                                if scene_idx < len(track.clip_slots):
+                                    slot = track.clip_slots[scene_idx]
+                                    status = slot.playing_status if hasattr(slot, 'playing_status') else 0
+                                    
+                                    self.sender.send_event("/live/clip_slot/created",
+                                                         track_idx, scene_idx,
+                                                         slot.has_clip, slot.has_stop_button,
+                                                         status)
+                            except Exception as e:
+                                self.log(f"Error sending manual clip_slot create for track {track_idx}: {e}", force=True)
 
             elif new_count < old_count:
                 # Scenes removed

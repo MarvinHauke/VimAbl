@@ -148,6 +148,7 @@ nav:
   - Architecture:
       - architecture/overview.md
       - WebSocket AST: architecture/websocket-ast.md
+      - Frontend State: architecture/frontend-state.md
       - Data Flow: architecture/data-flow.md
       - Hammerspoon Integration: architecture/hammerspoon-integration.md
       - Python Remote Script: architecture/python-remote-script.md

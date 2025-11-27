@@ -29,7 +29,7 @@ The Tree Viewer is a web-based interface that connects to the VimAbl backend via
   - Volume levels
 - **Device chains**: Shows all devices on each track
 - **Mixer settings**: Volume, pan, sends
-- **Clip slots**: Session view clips with their properties
+- **Clip slots**: Complete Session View grid with real-time playback states (playing, triggered, stopped, empty)
 - **Scenes**: Scene names and structure
 
 ### Visual Enhancements
@@ -38,6 +38,21 @@ The Tree Viewer is a web-based interface that connects to the VimAbl backend via
 - **Selected track highlighting**: Blue border around the currently selected track
 - **Auto-scroll**: Automatically scrolls to show the selected track
 - **Dark mode support**: Seamless dark/light theme switching
+
+#### Clip Slot Visualization
+
+The tree viewer provides detailed visual feedback for every clip slot in the Session View matrix:
+
+| State | Icon | Visual Style | Meaning |
+|-------|------|--------------|---------|
+| **Playing** | ▶ | Green background | Clip is actively playing |
+| **Triggered** | ⏸ | Orange pulse | Clip is queued to launch (quantized) |
+| **Stopped** | ■ | Gray | Clip is present but stopped |
+| **Empty** | □ | Light gray | Empty slot with stop button |
+| **No Stop** | ⊗ | Red text | Empty slot, stop button removed |
+
+This allows you to monitor the exact state of your Session View performance directly from the web interface.
+
 - **Change animations**:
   - Smooth 600ms flash for first change
   - Throttled updates for high-frequency changes (volume, parameters)

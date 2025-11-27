@@ -5,128 +5,80 @@ All notable changes to VimAbl will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2025-11-25
 
 ### Added
-- **UDP Listener Queue Architecture (Phase 5j)**
-  - Non-blocking event processing with asyncio.Queue (maxsize=1000)
-  - Decoupled UDP packet reception from WebSocket broadcasting
-  - Separate event processor task for concurrent handling
-  - Eliminates packet loss during rapid event bursts (tested: 55 events in <1ms, zero loss)
-  - Queue statistics tracking: `queue_size`, `queue_max`
-  - Stress testing suite: `tests/test_udp_stress.py`
-- **_Framework.Task Integration in Remote Script**
-  - Migrated polling logic from `update_display()` to Task system
-  - Three recurring tasks scheduled at ~60Hz:
-    - Observer manager polling (debounce/batching)
-    - Cursor observer updates (highlighted_clip_slot)
-    - Performance stats logging (every 5 minutes)
-  - Fallback to legacy polling if Task setup fails
-  - ~40 lines of code removed from `update_display()` (now only 7 lines)
-
-### Added
-- **Optimized Logging System with Performance Metrics**
-  - New streamlined logging architecture:
-    - Removed fragile `LogQueue` class and `_log_dispatcher` global
-    - Simple module-level functions: `init_logging()`, `drain_log_queue()`, `clear_log_queue()`
-    - Tuple-based queueing for faster performance (formatting deferred to main thread)
-    - Adaptive queue draining (increases limit when backlog builds)
-  - Severity level support: DEBUG, INFO, WARN, ERROR, CRITICAL
-  - Real-time performance metrics with <0.1% overhead:
-    - `messages_enqueued`, `messages_drained`, `messages_dropped`
-    - `peak_queue_size`, `queue_utilization`, `drop_rate`
-    - `get_log_stats()` API for programmatic access
-    - Automatic stats logging every 5 minutes and on shutdown
-  - Comprehensive documentation:
-    - New Logging API Reference with all functions documented
-    - Expanded Python Remote Script architecture guide
-    - Performance impact analysis in Performance Tuning guide
+- **Real-Time AST Synchronization (Phase 5e)**
+  - Integration of UDP listener with AST Server (`src/server/api.py`)
+  - Processing of real-time OSC events (`process_live_event`)
+  - Incremental AST updates (in-place modification for renames/state changes)
+  - Immediate broadcasting of diffs to WebSocket clients
+  - Fallback mechanism: Automatic XML reload when UDP event gaps > 5 are detected
 - **ClipSlot Matrix Implementation (Phase 6)**
   - Full ClipSlot grid representation in AST (track × scene matrix)
-  - CLIP_SLOT node type with empty and filled slot support
+  - `CLIP_SLOT` node type with empty and filled slot support
   - Real-time ClipSlot observers for all properties:
-    - `has_clip` - Detect clip add/remove
-    - `has_stop_button` - Detect stop button enable/disable
-    - `playing_status` - Track stopped/playing/triggered states (0/1/2)
-    - `color` - Slot color changes
-  - Real-time Clip observers when slot has clip:
-    - `name` - Detect clip renames
-    - `color` - Clip color changes
-    - `muted` - Clip mute state
-    - `looping` - Loop enable/disable
+    - `has_clip`, `has_stop_button`, `playing_status`, `color`
+  - Real-time Clip observers: `name`, `color`, `muted`, `looping`
   - Web UI visualization with icons and states:
     - ▶ Playing (green)
     - ⏸ Triggered/blinking (orange, animated)
     - ■ Stopped (gray)
     - □ Empty slot (light gray)
     - ⊗ No stop button (red)
-  - XML parser extracts all clip slots (including empty ones)
-  - Backward compatibility maintained with legacy clips array
-- Complete MkDocs documentation site
-- User guide with navigation and editing commands
-- Architecture documentation with Mermaid diagrams
-- API reference for OSC protocol and observable properties
-- Troubleshooting guide and FAQ
-- GitHub Pages deployment workflow with auto-generated documentation
+- **UDP Listener Queue Architecture (Phase 5j)**
+  - Non-blocking event processing with `asyncio.Queue` (maxsize=1000)
+  - Decoupled UDP packet reception from WebSocket broadcasting
+  - Separate event processor task for concurrent handling
+  - Eliminates packet loss during rapid event bursts
+  - Queue statistics tracking: `queue_size`, `queue_max`
+- **_Framework.Task Integration in Remote Script**
+  - Migrated polling logic from `update_display()` to Task system
+  - Three recurring tasks scheduled at ~60Hz:
+    - Observer manager polling (debounce/batching)
+    - Cursor observer updates (`highlighted_clip_slot`)
+    - Performance stats logging (every 5 minutes)
+  - Fallback to legacy polling if Task setup fails
+- **Optimized Logging System with Performance Metrics**
+  - Streamlined logging architecture with module-level functions
+  - Tuple-based queueing for faster performance
+  - Adaptive queue draining
+  - Real-time performance metrics (<0.1% overhead)
+  - New Logging API Reference and documentation
 
 ### Changed
 - **Node ID Format Standardization**
-  - Client-side ID generation now matches server format for consistency
+  - Client-side ID generation matches server format
   - Removed timestamp suffixes from dynamically created nodes
-  - ClipSlot IDs: `clip_slot_2_3` (was `clip_slot_2_3_1737367893421`)
-  - Device IDs: `device_2_1` (was `device_2_1_1737367893421`)
-  - Clip IDs: `clip_2_3` (was `clip_2_3_1737367893421`)
-  - Server remains single source of truth for SHA-256 hash computation
+  - ClipSlot IDs: `clip_slot_2_3`
+  - Device IDs: `device_2_1`
 - **Logging system refactor:**
-  - Replaced `log_simple()` with unified `log()` function taking severity levels
-  - Removed deprecated `observer_log()` function
+  - Replaced `log_simple()` with unified `log()` function
   - All observers now use severity levels (INFO/WARN/ERROR)
-  - Updated all Remote Script files: `LiveState.py`, `observers.py`, `cursor_observer.py`, `udp_sender.py`
-  - Enhanced `symlink.sh` to show `_Framework/` directory when creating symlink
-- Reorganized documentation structure
-- Updated mkdocs.yml with comprehensive navigation
-- Enhanced AST updater with ClipSlot event handlers
-- Simplified web UI visual effects - removed add/modify/delete animations
-- Unified selection highlighting to blue for both tracks and clip slots
-- Immediate DOM updates (no animation delays) for better performance
+- **Documentation Updates**:
+  - Reorganized documentation structure
+  - Updated mkdocs.yml with comprehensive navigation
+  - Enhanced AST updater with ClipSlot event handlers
+- **Web UI Improvements**:
+  - Simplified visual effects (removed add/modify/delete animations)
+  - Unified selection highlighting to blue
+  - Immediate DOM updates for better performance
 
 ### Fixed
-- **Scene Insertion Position in Web UI**
-  - New scenes now appear after all tracks (matching server's AST structure)
-  - Previously: Scenes inserted before tracks (appeared at top of tree)
-  - Now: Scenes inserted after tracks in index order (tracks → scenes → file_refs)
-  - Scene IDs now match server format: `scene_0` (was `scene_0_1737367893421`)
-- **UDP Packet Loss During Rapid Events**
-  - Fixed gap detection warnings during scene reordering (was losing 8-12 events)
-  - Root cause: WebSocket broadcasts blocking UDP reception
-  - Solution: Event queue architecture prevents receiver blocking
-  - Impact: Zero packet loss even with 55 events in <1ms bursts
-- **_Framework.Task Import Error**
-  - Fixed incorrect import: `from _Framework.Task import Task` → `from _Framework import Task`
-  - Added graceful fallback to legacy polling if Task setup fails
-  - Added error handling with `_task_setup_failed` flag
-- XPath selector bug causing double-counting of clip slots (`.//ClipSlot` → `./ClipSlot`)
-- Clip slot selection now uses consistent blue highlight matching track selection
-- Remote Script initialization crash due to missed `observer_log()` calls in `ObserverManager.__init__()`
+- **Scene Insertion Position**: Scenes now inserted after tracks in AST structure
+- **UDP Packet Loss**: Fixed gap detection warnings during rapid bursts using queue architecture
+- **_Framework.Task Import Error**: Fixed incorrect import path
+- **XPath Selector Bug**: Fixed double-counting of clip slots
+- **Clip Slot Selection**: Consistent blue highlight matching track selection
 
 ### Performance
-- **UDP Listener Optimization**
-  - Zero packet loss with asyncio.Queue architecture (tested with 55 events in <1ms)
-  - Non-blocking event processing prevents UDP buffer overflow
-  - Concurrent WebSocket broadcasts no longer block incoming packets
-  - Queue capacity: 1000 events (adjustable)
-- **Remote Script update_display() Optimization**
-  - Reduced from ~40 lines to 7 lines (Task-based delegation)
-  - Polling moved to _Framework.Task system (~60Hz scheduled tasks)
-  - Minimal overhead: Only log queue draining + Task.update()
-  - Better separation of concerns (no business logic in display loop)
-- **10-20% faster logging** due to tuple-based queueing
-- **Better burst handling** with larger queue (2000 vs 1000) and adaptive draining
-- **Faster level filtering** using set lookup instead of if/else chains
-- **Reduced global lookups** with cached queue references
-- **Metrics tracking overhead: <0.1% CPU** (negligible impact)
+- **UDP Listener**: Zero packet loss with asyncio.Queue architecture
+- **Remote Script**: `update_display()` reduced to 7 lines via Task delegation
+- **Logging**: 10-20% faster with tuple-based queueing
+- **Metrics**: <0.1% CPU overhead for tracking
 
 ## [0.3.0] - 2025-11-16
+
 
 ### Added
 - Session View cursor tracking

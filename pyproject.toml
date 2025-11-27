@@ -9,6 +9,7 @@ dependencies = [
     "aiohttp>=3.9.0",
     "watchdog>=3.0.0",
     "mkdocs-material>=9.7.0",
+    "fastmcp>=2.13.1",
 ]
 
 [project.optional-dependencies]
@@ -26,3 +27,6 @@ packages = ["src"]
 
 [tool.uv]
 dev-dependencies = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

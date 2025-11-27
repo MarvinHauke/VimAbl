@@ -11,6 +11,7 @@ This document outlines the implementation plan for adding a **Svelte-based Web T
 ## Current State Analysis
 
 Your AST architecture is solid with:
+
 - ✅ Well-structured node classes (ProjectNode, TrackNode, DeviceNode, ClipNode, etc.)
 - ✅ Visitor pattern implementation (serialization, diffing, searching)
 - ✅ Incremental hashing for change detection
@@ -71,12 +72,14 @@ Your AST architecture is solid with:
 The WebSocket server and Hammerspoon integration are complete! Key components:
 
 **Hammerspoon Integration:**
+
 - `src/hammerspoon/websocket_manager.lua` - Manages WebSocket server process lifecycle
 - `src/hammerspoon/keys/websocket.lua` - Keybindings for manual control
 - `src/hammerspoon/app_watcher.lua` - Auto-starts server when Ableton launches
 - `src/remote_script/commands.py` - Added `GET_PROJECT_PATH` command
 
 **How It Works:**
+
 1. Ableton Live launches → Hammerspoon detects it
 2. Waits 5 seconds for Live to fully load
 3. Queries Remote Script for current project path
@@ -85,6 +88,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 6. When Ableton quits → Server stops automatically
 
 **Manual Controls:**
+
 - `Cmd+Shift+W` - Toggle WebSocket server
 - `Cmd+Shift+R` - Restart server
 - `Cmd+Shift+I` - Show server status
@@ -439,11 +443,13 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 ```
 
 **Port Allocation:**
+
 - **9001**: Remote Script TCP server (existing - commands)
 - **9002**: UDP listener (new - real-time events)
 - **8765**: WebSocket server (existing - AST to Svelte)
 
 **Why UDP/OSC?**
+
 - ✅ Very low latency (< 1 ms) - no blocking inside Live
 - ✅ Fire-and-forget - Remote Script never waits
 - ✅ Ableton-friendly pattern (same as Max for Live, TouchOSC)
@@ -452,6 +458,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 - ⚠️ UDP is unreliable - use XML diff as fallback for guaranteed consistency
 
 **Future Option: ZeroMQ (deferred to Phase 9)**
+
 - For production/distributed setups
 - PUB/SUB pattern with auto-reconnect
 - Requires `pyzmq` packaging in Remote Script
@@ -610,36 +617,36 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [x] Verified: 0 duplicates, 0 gaps, 0 parse errors
   - [x] Test deduplication logic - working correctly
 
-### Phase 5e: Integrate UDP Listener with AST Server
+### Phase 5e: Integrate UDP Listener with AST Server ✅ COMPLETE
 
 **Goal: Process real-time events and update WebSocket clients**
 
-- [ ] Update `src/server/api.py` - Add event processing
-  - [ ] Start UDP listener as async task
-  - [ ] Add `process_live_event(event)` method
-  - [ ] Map OSC events to AST operations:
+- [x] Update `src/server/api.py` - Add event processing
+  - [x] Start UDP listener as async task
+  - [x] Add `process_live_event(event)` method
+  - [x] Map OSC events to AST operations:
     - Track renamed → update AST node, broadcast diff
     - Device added → add node to AST, broadcast diff
     - Clip triggered → update state, broadcast event
     - Parameter changed → update value, broadcast event (optional)
-  - [ ] Batch multiple events into single diff (wait 50ms)
-  - [ ] Broadcast updates via existing WebSocket server
-- [ ] Implement incremental AST updates (lightweight)
-  - [ ] For renames: update node in-place, recompute hash
-  - [ ] For add/delete: modify tree structure, recompute parent hashes
-  - [ ] For state changes (play/mute): update flags only, no rehash
-  - [ ] Generate minimal diff (only changed nodes)
-- [ ] Add fallback to XML diff
-  - [ ] If UDP events are missed (gaps detected)
-  - [ ] If AST becomes inconsistent (hash mismatch)
-  - [ ] Trigger full XML reload and diff
-  - [ ] Log fallback occurrences
-- [ ] Test integration
-  - [ ] Start AST server with UDP listener
-  - [ ] Open Svelte UI in browser
-  - [ ] Make changes in Live
-  - [ ] Verify real-time updates in UI (<100ms latency)
-  - [ ] Test fallback by simulating packet loss
+  - [x] Batch multiple events into single diff (wait 50ms)
+  - [x] Broadcast updates via existing WebSocket server
+- [x] Implement incremental AST updates (lightweight)
+  - [x] For renames: update node in-place, recompute hash
+  - [x] For add/delete: modify tree structure, recompute parent hashes
+  - [x] For state changes (play/mute): update flags only, no rehash
+  - [x] Generate minimal diff (only changed nodes)
+- [x] Add fallback to XML diff
+  - [x] If UDP events are missed (gaps detected)
+  - [x] If AST becomes inconsistent (hash mismatch)
+  - [x] Trigger full XML reload and diff
+  - [x] Log fallback occurrences
+- [x] Test integration
+  - [x] Start AST server with UDP listener
+  - [x] Open Svelte UI in browser
+  - [x] Make changes in Live
+  - [x] Verify real-time updates in UI (<100ms latency)
+  - [x] Test fallback by simulating packet loss
 
 ### Phase 5f: Observer Lifecycle Management ✅
 
@@ -759,6 +766,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 **Goal: Replace UDP with ZeroMQ for production-grade reliability**
 
 **Why defer this?**
+
 - UDP/OSC is simpler to implement and debug
 - For local-only use case, UDP packet loss is negligible
 - ZeroMQ requires additional dependencies in Remote Script
@@ -866,7 +874,7 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
   - [ ] Verify WebSocket broadcasts update
   - [ ] Check Svelte UI reflects changes
 
-### Phase 5j: Optimize update_display() Loop ⚡️
+### Phase 5j: Optimize update_display() Loop ⚡️ ✅ COMPLETE
 
 **Priority: HIGH**
 **Goal: Refactor update_display() for optimal performance in heavy Ableton projects**
@@ -874,11 +882,13 @@ The WebSocket server and Hammerspoon integration are complete! Key components:
 **Context**: The `update_display()` method in `LiveState.py` is called by Ableton Live's main loop at ~60Hz. This is the **hottest code path** in the Remote Script and must be extremely lightweight to avoid audio dropouts.
 
 **Current Issues**:
+
 - Polling logic inside update_display() (cursor observer, debouncer checks)
 - Stats calculation every frame (even when not logging)
-- Direct calls to `udp_observer_manager.update()` instead of using _Framework.Task
+- Direct calls to `udp_observer_manager.update()` instead of using \_Framework.Task
 
 **Optimal Implementation**:
+
 ```python
 def update_display(self):
     """
@@ -907,34 +917,37 @@ def update_display(self):
 ```
 
 **Key Principles**:
+
 - ✅ update_display() must be tiny and fast
 - ✅ Logger drains only here (thread-safe)
-- ✅ All debounce, batching, scheduling → _Framework.Task
+- ✅ All debounce, batching, scheduling → \_Framework.Task
 - ✅ Never poll inside update_display()
 - ✅ Never call Live API inside update_display()
 - ✅ Always call super().update_display()
 
 **Implementation Tasks**:
-- [ ] Refactor `LiveState.update_display()` to minimal implementation
-  - [ ] Keep only logger drain and super() call
-  - [ ] Remove all polling logic
-  - [ ] Remove stats calculation
-  - [ ] Remove direct observer/debouncer calls
-- [ ] Move polling to _Framework.Task scheduler
-  - [ ] Create Task for cursor_observer.update() (60Hz)
-  - [ ] Create Task for udp_observer_manager.update() (60Hz)
-  - [ ] Create Task for stats logging (every 5 minutes)
-- [ ] Update ObserverManager.update() documentation
-  - [ ] Clarify that it should be called via Task, not update_display()
-- [ ] Update CursorObserver.update() documentation
-  - [ ] Same clarification
-- [ ] Test performance
-  - [ ] Measure CPU usage before/after
-  - [ ] Verify no audio dropouts with heavy projects
-  - [ ] Confirm all functionality still works
-  - [ ] Test with 50+ tracks and 200+ devices
+
+- [x] Refactor `LiveState.update_display()` to minimal implementation
+  - [x] Keep only logger drain and super() call
+  - [x] Remove all polling logic
+  - [x] Remove stats calculation
+  - [x] Remove direct observer/debouncer calls
+- [x] Move polling to \_Framework.Task scheduler
+  - [x] Create Task for cursor_observer.update() (60Hz)
+  - [x] Create Task for udp_observer_manager.update() (60Hz)
+  - [x] Create Task for stats logging (every 5 minutes)
+- [x] Update ObserverManager.update() documentation
+  - [x] Clarify that it should be called via Task, not update_display()
+- [x] Update CursorObserver.update() documentation
+  - [x] Same clarification
+- [x] Test performance
+  - [x] Measure CPU usage before/after
+  - [x] Verify no audio dropouts with heavy projects
+  - [x] Confirm all functionality still works
+  - [x] Test with 50+ tracks and 200+ devices
 
 **Expected Benefits**:
+
 - 🚀 Reduced CPU usage in update_display() loop
 - 🎯 Better separation of concerns (Task system handles scheduling)
 - 🔧 Easier to debug (less code in hot path)
@@ -942,6 +955,7 @@ def update_display(self):
 - 🎵 No audio dropouts even with heavy projects
 
 **Documentation**:
+
 - [ ] Add performance tuning guide to `docs/development/performance-tuning.md`
 - [ ] Document update_display() best practices
 - [ ] Add Task scheduling examples
@@ -962,6 +976,7 @@ def update_display(self):
 ### Overview
 
 Implement a complete ClipSlot matrix that represents ALL clip slots (empty and filled) in the Session View grid. This enables:
+
 - Cursor highlighting of empty clip slots in web UI
 - Real-time detection of clip playback state (playing, triggered)
 - Display of has_stop_button property
@@ -1097,6 +1112,7 @@ Implement a complete ClipSlot matrix that represents ALL clip slots (empty and f
 ### Testing Strategy
 
 **Unit Tests**:
+
 - [ ] `tests/test_clip_slot_parser.py` - XML parsing
   - Test all empty slots
   - Test mixed empty/filled slots
@@ -1104,12 +1120,14 @@ Implement a complete ClipSlot matrix that represents ALL clip slots (empty and f
   - Test slot count matches scene count
 
 **Integration Tests**:
+
 - [ ] `tests/test_clip_slot_ast.py` - AST building
   - Test ClipSlotNode creation
   - Test matrix completeness (all tracks × all scenes)
   - Test clip as child of clip_slot
 
 **Manual Testing Checklist**:
+
 - [ ] Load project with 8+ scenes and 16+ tracks
 - [ ] Verify all clip_slots visible in web UI
 - [ ] Select various empty slots → Check highlights
@@ -1217,6 +1235,7 @@ uv run python test_websocket.py
 ```
 
 **Expected Output:**
+
 ```
 Connecting to ws://localhost:8765...
 Connected!
@@ -1242,6 +1261,7 @@ Test successful!
 #### Troubleshooting
 
 **Connection Refused Error:**
+
 ```bash
 # Check if WebSocket server is running
 lsof -i :8765
@@ -1251,6 +1271,7 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
 ```
 
 **Port Already in Use:**
+
 ```bash
 # Kill process on port 8765
 lsof -ti :8765 | xargs kill -9
@@ -1260,12 +1281,14 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
 ```
 
 **WebSocket Server Doesn't Auto-Start (Hammerspoon):**
+
 1. Is your project saved? (Has a `.als` file path)
 2. Open Hammerspoon console - look for error messages
 3. Check if Remote Script is running: `echo "GET_STATE" | nc -w 1 127.0.0.1 9001`
 4. Try manually: `Cmd+Shift+W` to toggle server
 
 **No AST Data Displayed:**
+
 1. Is WebSocket server running? `lsof -i :8765`
 2. Is connection status "Connected"?
 3. Check browser console for errors
@@ -1391,31 +1414,37 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
 ## Implementation Order & Timeline
 
 ### Week 1-2: WebSocket Backend
+
 1. ✅ Phase 1a: WebSocket server setup
 2. ✅ Phase 1b: AST integration
 3. ✅ Phase 1c: CLI updates
 
 ### Week 3-4: Svelte Frontend Basics
+
 4. ✅ Phase 2a: SvelteKit setup
 5. ✅ Phase 2b: WebSocket client
 6. ✅ Phase 2c: Basic tree component
 
 ### Week 5-6: Real-Time Updates
+
 7. ✅ Phase 3a: Diff application
 8. ✅ Phase 3b: Visual indicators
 9. ✅ Phase 3c: Performance optimization
 
 ### Week 7-8: Enhanced UI
+
 10. ✅ Phase 4a: Search & filter
 11. ✅ Phase 4b: Node details
 12. ✅ Phase 4c: Statistics dashboard
 
 ### Week 9-10: Remote Script Integration
+
 13. ✅ Phase 5a: Event observers
 14. ✅ Phase 5b: Bi-directional control (optional)
 15. ✅ Phase 5c: Auto-export integration
 
 ### Week 11-12: Polish & Testing
+
 16. ✅ Phase 6: Advanced features (as time allows)
 17. ✅ Phase 7: Testing & documentation
 18. ✅ Phase 8: Deployment
@@ -1425,7 +1454,9 @@ uv run python -m src.main Example_Project/example.als --mode=websocket
 ## Dependencies & Requirements
 
 ### Python Dependencies
+
 Add to `requirements.txt`:
+
 ```
 websockets>=12.0
 aiohttp>=3.9.0  # For serving static files
@@ -1433,7 +1464,9 @@ watchdog>=3.0.0  # Already included
 ```
 
 ### Node.js Dependencies
+
 In `src/web/frontend/package.json`:
+
 ```json
 {
   "dependencies": {
@@ -1456,26 +1489,31 @@ In `src/web/frontend/package.json`:
 ## Architecture Benefits
 
 ### 1. Real-Time Visualization
+
 - See project structure instantly
 - Watch changes as you work in Live
 - Visual feedback for all modifications
 
 ### 2. Enhanced Navigation
+
 - Search for any track, device, or clip
 - Jump to specific nodes quickly
 - Explore project structure visually
 
 ### 3. Change Tracking
+
 - Highlight what changed since last save
 - View change history
 - Compare different versions
 
 ### 4. Debugging Aid
+
 - Inspect AST structure
 - Verify parsing correctness
 - Debug Remote Script integration
 
 ### 5. Educational Tool
+
 - Understand .als file format
 - Learn about project structure
 - Visualize complex relationships
@@ -1485,25 +1523,30 @@ In `src/web/frontend/package.json`:
 ## Open Questions & Decisions
 
 ### 1. WebSocket vs HTTP Polling?
+
 - **Decision: WebSocket** ✓
 - Pros: Real-time, efficient, bidirectional
 - Cons: Slightly more complex than HTTP
 
 ### 2. Server-Sent Events (SSE) Alternative?
+
 - Simpler than WebSocket but less flexible
 - **Stick with WebSocket for bidirectional control**
 
 ### 3. Separate Ports for Different Services?
+
 - Port 9001: Remote Script (Live API)
 - Port 8765: WebSocket (AST streaming)
 - **Decision: Keep separate** ✓ (cleaner separation)
 
 ### 4. Authentication/Security?
+
 - Currently localhost-only (no auth needed)
 - **For local dev, no auth required** ✓
 - Future: Add token-based auth for remote access
 
 ### 5. Multiple Project Support?
+
 - Allow viewing multiple projects simultaneously?
 - **Start with single project, add multi-project later**
 
@@ -1512,26 +1555,31 @@ In `src/web/frontend/package.json`:
 ## Success Criteria
 
 ### Phase 1-2 Success
+
 - [ ] WebSocket server runs without errors
 - [ ] Svelte app connects and receives AST
 - [ ] Tree structure displays correctly
 
 ### Phase 3 Success
+
 - [ ] Real-time updates work smoothly
 - [ ] Diffs apply correctly without UI glitches
 - [ ] Change highlights appear and fade properly
 
 ### Phase 4 Success
+
 - [ ] Search finds nodes accurately
 - [ ] Details panel shows complete info
 - [ ] Statistics update in real-time
 
 ### Phase 5 Success
+
 - [ ] Events from Live appear in UI within 100ms
 - [ ] Bi-directional control works reliably
 - [ ] Auto-export updates tree automatically
 
 ### Overall Success
+
 - [ ] Tree viewer loads in <2 seconds
 - [ ] Updates appear within 100ms of change
 - [ ] UI remains responsive with 50+ tracks
@@ -1558,52 +1606,3 @@ In `src/web/frontend/package.json`:
 3. **Use Example_Project/** for testing throughout
 4. **Document as you go** - Add comments and docstrings
 5. **Consider branch strategy** - Use `feature/web-treeviewer` branch
-
----
-
-## Future Improvements & Refactoring
-
-- [ ] Refactor XML export to use AppleScript instead of TCP command for faster startup.
-
-- [ ] Refactor `project_watcher.lua` to support instant startup.
-
-    **Implementation Plan:**
-
-    **Part 1: Investigate AppleScript-based Project Path Detection**
-    - **Goal:** Find a reliable AppleScript command to get the current project path from Ableton Live.
-    - **Method:**
-        - Use `hs.applescript.run()` to query the `path of document 1` from the active Ableton Live process.
-        - Handle cases where no project is open or Ableton is not running.
-    - **Deliverable:** A new function in `src/hammerspoon/live_state.lua` called `getCurrentProjectPathWithAppleScript()`.
-
-    **Part 2: Implement Proactive Startup Logic**
-    - **Goal:** Modify the startup sequence to proactively check for projects on app launch/activation.
-    - **Method:**
-        - In `src/hammerspoon/app_watcher.lua`, on `launched` and `activated` events, call the new AppleScript function to get the project path.
-        - If a path is found, check for the existence of a corresponding `.xml` file in the `.vimabl` directory.
-        - If the XML exists, call a new function `websocket_manager.startFromProject(project_path)` that starts the server without triggering a new XML export.
-    - **Deliverable:** Modified `app_watcher.lua` and `websocket_manager.lua`.
-
-    **Part 3: Refactor `project_watcher.lua`**
-    - **Goal:** Adapt the project watcher to work with the new proactive startup logic.
-    - **Method:**
-        - The "broad mode" watch will now primarily act as a fallback for when a project is saved for the very first time (i.e., no `.als` path exists on launch).
-        - When the proactive startup succeeds, `app_watcher` will now be responsible for telling `project_watcher` to start immediately in "narrow mode" on the detected project path.
-    - **Deliverable:** A more refined `project_watcher.lua` that can be started directly in narrow mode.
-
-    **Part 4: Testing**
-    - **Goal:** Ensure the new startup path is faster and the old path still works as a fallback.
-    - **Method:**
-        - **Test Case 1 (Fast Path):** Open an existing, already-saved project. Verify the VimAbl server starts immediately without needing to save the project.
-        - **Test Case 2 (Fallback Path):** Create a new, unsaved Ableton project. Verify that nothing happens on launch. Then, save the project for the first time and verify the server starts as it does now.
-        - **Test Case 3 (Subsequent Saves):** With the server running, save the project again. Verify the UI updates correctly (this ensures the watcher's monitoring capability is intact).
-
----
-
-## Reference Documents
-
-- `SVELTE_TREEVIEWER.md` - Original feature specification
-- `REFACTORING_SUMMARY.md` - AST refactoring details
-- `README.md` - Project overview
-- `src/ast/node.py` - Node class definitions
-- `src/ast/visitor.py` - Visitor patterns

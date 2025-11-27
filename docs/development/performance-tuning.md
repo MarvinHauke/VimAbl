@@ -111,6 +111,33 @@ Some observers run at high frequency (~60Hz):
 - **Debounce updates** - Trailing edge event processing
 - **Transport events** - Playback position updates
 
+### Remote Script Task Architecture
+
+**Phase 5j Optimization**: We refactored the Remote Script's `update_display()` loop to be extremely lightweight, leveraging Ableton's `_Framework.Task` scheduler.
+
+**Problem**: The `update_display()` method runs at ~60Hz in Live's main UI thread. Doing heavy logic (polling, debouncing, stats calculation) here can cause audio dropouts or UI lag.
+
+**Solution**: Delegate all recurring work to the Task system.
+
+```python
+def update_display(self):
+    """
+    The fastest possible update loop.
+    """
+    # 1. Drain log queue (micro-optimized)
+    drain_log_queue()
+    
+    # 2. Run Task scheduler (executes our scheduled tasks)
+    super().update_display()
+```
+
+**Scheduled Tasks**:
+1. **Observer Manager**: Polls for debounced events (volume/params) every frame.
+2. **Cursor Observer**: Checks `highlighted_clip_slot` every frame.
+3. **Stats Logger**: Logs performance metrics every 5 minutes.
+
+This separation of concerns ensures that the critical display loop remains minimal, while logic runs safely within the framework's scheduler.
+
 ### UDP Listener Queue Architecture
 
 The UDP listener uses an **asyncio.Queue** to decouple packet reception from event processing, preventing packet loss during rapid event bursts.

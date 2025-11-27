@@ -6,6 +6,12 @@
       "args": ["-y", "@sveltejs/mcp"],
       "env": {}
     },
+    "AbletonMCP": {
+      "command": "python3",
+      "args": [
+        "/Users/pforsten/Development/python/ableton-mcp-extended/MCP_Server/server.py"
+      ]
+    },
     "chrome-devtools": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]

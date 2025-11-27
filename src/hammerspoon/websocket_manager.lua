@@ -98,8 +98,10 @@ function M.start(projectPath)
 	end
 
 	local projectRoot = os.getenv("HOME") .. "/Development/python/VimAbl"
+	local logFile = projectRoot .. "/server.log"
 
 	print("[WebSocket] Starting server for XML: " .. M.xmlPath)
+	print("[WebSocket] Logs will be written to: " .. logFile)
 
 	M.wsTask = hs.task.new(
 		uvPath,
@@ -133,6 +135,8 @@ function M.start(projectPath)
 			"--mode=websocket",
 			"--ws-port=" .. M.port,
 			"--no-signals",
+			"--log-file=" .. logFile,
+			"--log-level=DEBUG",
 		}
 	)
 

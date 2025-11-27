@@ -35,7 +35,22 @@
 
 					// New backend format has a 'changes' array with structured change objects
 					if (diffMessage.payload) {
-						astStore.applyDiff(diffMessage.payload);
+						// Real-time updates wrap the diff in a 'diff' property
+						// XML file saves send the diff object directly in payload
+						const diffData = diffMessage.payload.diff || diffMessage.payload;
+						
+						// Update sequence number from the diff if available to prevent gap warnings
+						// (Real-time diffs have a 'changes' array where each change has a seq_num)
+						const changes = diffData.changes;
+						if (Array.isArray(changes) && changes.length > 0 && changes[0].seq_num) {
+							// Use the highest seq_num from the batch (usually they are all the same or sequential)
+							const maxSeqNum = Math.max(...changes.map((c: any) => c.seq_num || 0));
+							if (maxSeqNum > 0) {
+								astStore.updateSequenceNumber(maxSeqNum);
+							}
+						}
+
+						astStore.applyDiff(diffData);
 					}
 				} else if (message.type === 'live_event') {
 					// Apply real-time UDP event to AST or cursor
@@ -56,13 +71,13 @@
 						if (eventPath === '/live/cursor/track' && args.length >= 3 && args[2]) {
 							// Update track name in AST if provided by Live API
 							// Note: seq num already updated above, so pass 0 to skip duplicate tracking
+							// We still use applyLiveEvent here as a special case for cursor-driven updates
+							// that might not generate a server diff (e.g. master track name)
 							astStore.applyLiveEvent('/live/track/renamed', [args[0], args[2]], 0);
 						}
-					} else {
-						// Handle AST update event
-						// Note: seq num already updated above, so pass 0 to skip duplicate tracking
-						astStore.applyLiveEvent(eventPath, args, 0);
-					}
+					} 
+					// Note: All other AST events are now handled via DIFF_UPDATE messages from the server
+					// We do NOT call astStore.applyLiveEvent for them anymore to avoid double-processing.
 
 					// Only log non-transport events to reduce console spam
 					// (Transport play events fire very frequently during playback)

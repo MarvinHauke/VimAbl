@@ -8,26 +8,27 @@ VimAbl is a sophisticated project that integrates Vim-like keyboard control into
 
 The project is comprised of several key components:
 
-*   **Python Remote Script (`src/remote_script`):** This script runs inside Ableton Live as a Control Surface. It's responsible for:
-    *   Observing the state of the Ableton Live project (tracks, devices, scenes, etc.).
-    *   Sending real-time updates via UDP/OSC to a listener.
-    *   Running a TCP server to receive commands (e.g., from Hammerspoon).
+- **Python Remote Script (`src/remote_script`):** This script runs inside Ableton Live as a Control Surface. It's responsible for:
+  - Observing the state of the Ableton Live project (tracks, devices, scenes, etc.).
+  - Sending real-time updates via UDP/OSC to a listener.
+  - Running a TCP server to receive commands (e.g., from Hammerspoon).
+  * Additional informations can be found under this repo https://github.com/gluon/AbletonLive12_MIDIRemoteScripts and this link https://structure-void.com/AbletonLiveRemoteScripts_Docs/_Framework/
 
-*   **Hammerspoon (Lua) Scripts (`src/hammerspoon`):** These scripts run on macOS and are used to:
-    *   Capture keyboard input to trigger commands.
-    *   Send commands to the Python Remote Script's TCP server.
-    *   Manage the lifecycle of the WebSocket server.
+- **Hammerspoon (Lua) Scripts (`src/hammerspoon`):** These scripts run on macOS and are used to:
+  - Capture keyboard input to trigger commands.
+  - Send commands to the Python Remote Script's TCP server.
+  - Manage the lifecycle of the WebSocket server.
 
-*   **WebSocket Server (`src/main.py`, `src/server`):** This is a Python application that:
-    *   Parses the Ableton Live project file (`.als`) into an Abstract Syntax Tree (AST).
-    *   Runs a WebSocket server to broadcast the AST to connected clients (the web UI).
-    *   Includes a UDP listener (`src/udp_listener`) to receive real-time updates from the Python Remote Script and apply them to the AST.
-    *   Watches the project file for changes and sends out diffs to the web UI.
+- **WebSocket Server (`src/main.py`, `src/server`):** This is a Python application that:
+  - Parses the Ableton Live project file (`.als`) into an Abstract Syntax Tree (AST).
+  - Runs a WebSocket server to broadcast the AST to connected clients (the web UI).
+  - Includes a UDP listener (`src/udp_listener`) to receive real-time updates from the Python Remote Script and apply them to the AST.
+  - Watches the project file for changes and sends out diffs to the web UI.
 
-*   **Svelte Frontend (`src/web/frontend`):** A web-based interface that:
-    *   Connects to the WebSocket server.
-    *   Renders a real-time, interactive tree view of the Ableton Live project.
-    *   Highlights the currently selected track or clip.
+- **Svelte Frontend (`src/web/frontend`):** A web-based interface that:
+  - Connects to the WebSocket server.
+  - Renders a real-time, interactive tree view of the Ableton Live project.
+  - Highlights the currently selected track or clip.
 
 ## Building and Running
 
@@ -36,6 +37,7 @@ The project uses `uv` for Python package management.
 ### Installation
 
 1.  **Install `uv`:**
+
     ```bash
     curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
@@ -109,7 +111,7 @@ New commands can be added by following these steps:
 
 ### Contribution Guidelines
 
-*   Fork the repository and create a feature branch.
-*   Make changes and test them thoroughly.
-*   Commit the changes and open a pull request.
-*   The development setup uses symlinks for rapid iteration.
+- Fork the repository and create a feature branch.
+- Make changes and test them thoroughly.
+- Commit the changes and open a pull request.
+- The development setup uses symlinks for rapid iteration.

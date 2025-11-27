@@ -146,13 +146,21 @@ class UDPListener:
         # This prevents slow WebSocket broadcasts from blocking UDP receives
         self._event_queue = asyncio.Queue(maxsize=1000)
 
-        # Create UDP socket
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.bind((self.host, self.port))
-        self.socket.setblocking(False)
-
-        logger.info(f"UDP listener started on {self.host}:{self.port}")
+        try:
+            # Create UDP socket
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind((self.host, self.port))
+            self.socket.setblocking(False)
+            
+            logger.info(f"UDP listener started on {self.host}:{self.port}")
+        except OSError as e:
+            logger.error(f"Failed to start UDP listener on {self.host}:{self.port}: {e}")
+            self.running = False
+            if self.socket:
+                self.socket.close()
+                self.socket = None
+            raise e
 
         # Start event processor task
         self._processor_task = asyncio.create_task(self._event_processor())

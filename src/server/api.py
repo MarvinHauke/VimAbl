@@ -13,6 +13,7 @@ This provides a programmatic interface for:
 import asyncio
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -141,7 +142,7 @@ class ASTServer:
                 clip_slot_node = ClipSlotNode(
                     track_index=track_data["index"],
                     scene_index=scene_idx,
-                    id=f"clip_slot_{track_data['index']}_{scene_idx}"
+                    id=f"clip_slot_{uuid.uuid4().hex[:8]}"
                 )
                 
                 # Set clip slot properties
@@ -200,7 +201,7 @@ class ASTServer:
             scene_node = SceneNode(
                 name=scene_data.get("name", ""),
                 index=scene_data.get("index", 0),
-                id=f"scene_{scene_data.get('index', 0)}"
+                id=f"scene_{uuid.uuid4().hex[:8]}"
             )
             scene_node.attributes['color'] = scene_data.get("color", -1)
             scene_node.attributes['tempo'] = scene_data.get("tempo", 120.0)
@@ -404,22 +405,6 @@ class ASTServer:
 
         Returns:
             Dictionary with processing result, or None if event was ignored
-
-        Event Types:
-            - /live/track/renamed <track_idx> <name>
-            - /live/track/mute <track_idx> <muted_bool>
-            - /live/track/arm <track_idx> <armed_bool>
-            - /live/track/volume <track_idx> <volume_float>
-            - /live/device/added <track_idx> <device_idx> <name>
-            - /live/device/deleted <track_idx> <device_idx>
-            - /live/device/param <track_idx> <device_idx> <param_id> <value>
-            - /live/clip_slot/created <track_idx> <scene_idx> <has_clip> <has_stop_button> <playing_status>
-            - /live/scene/renamed <scene_idx> <name>
-            - /live/scene/added <scene_idx> <name>
-            - /live/scene/removed <scene_idx>
-            - /live/scene/reordered <scene_idx> <name>
-            - /live/transport/play <is_playing_bool>
-            - /live/transport/tempo <bpm_float>
         """
         if not self.current_ast:
             logger.warning(f"No AST loaded, ignoring event: {event_path}")
@@ -442,20 +427,17 @@ class ASTServer:
             elif event_path == "/live/scene/renamed":
                 return await self._handle_scene_renamed(args, seq_num)
             elif event_path == "/live/scene/added":
-                return await self._handle_scene_added(args, seq_num, timestamp)
+                return await self._handle_scene_added(args, seq_num)
             elif event_path == "/live/scene/removed":
                 return await self._handle_scene_removed(args, seq_num)
             elif event_path == "/live/scene/reordered":
                 return await self._handle_scene_reordered(args, seq_num)
             elif event_path == "/live/clip_slot/created":
-                # Clip slot creation is broadcast-only, client handles AST update
-                return {"type": "clip_slot_created", "broadcast_only": True}
+                return await self._handle_clip_slot_created(args, seq_num)
             elif event_path.startswith("/live/transport/"):
-                # Transport events are lightweight, just broadcast without AST update
-                return {"type": "transport_event", "broadcast_only": True}
+                return await self._handle_transport_event(event_path, args, seq_num)
             elif event_path.startswith("/live/device/param"):
-                # Parameter changes are high-frequency, broadcast only
-                return {"type": "param_event", "broadcast_only": True}
+                return await self._handle_device_param(args, seq_num)
             else:
                 logger.debug(f"Unhandled event type: {event_path}")
                 return None
@@ -498,7 +480,7 @@ class ASTServer:
         diff_result = {
             'changes': [{
                 'type': 'modified',
-                'node_id': track_node.node_id,
+                'node_id': track_node.id,
                 'node_type': 'track',
                 'path': f"tracks[{track_idx}]",
                 'old_value': {'name': old_name},
@@ -507,7 +489,7 @@ class ASTServer:
             }],
             'added': [],
             'removed': [],
-            'modified': [track_node.node_id]
+            'modified': [track_node.id]
         }
 
         # Broadcast diff
@@ -542,7 +524,7 @@ class ASTServer:
         diff_result = {
             'changes': [{
                 'type': 'state_changed',
-                'node_id': track_node.node_id,
+                'node_id': track_node.id,
                 'node_type': 'track',
                 'path': f"tracks[{track_idx}]",
                 'attribute': attribute,
@@ -552,7 +534,7 @@ class ASTServer:
             }],
             'added': [],
             'removed': [],
-            'modified': [track_node.node_id]
+            'modified': [track_node.id]
         }
 
         # Broadcast diff
@@ -582,7 +564,7 @@ class ASTServer:
         new_device = DeviceNode(
             name=device_name,
             device_type='unknown',  # We don't know the type from UDP event
-            node_id=f"device_{track_idx}_{device_idx}_{seq_num}"
+            id=f"device_{track_idx}_{device_idx}_{seq_num}"
         )
 
         # Insert device at the specified index
@@ -601,14 +583,14 @@ class ASTServer:
         diff_result = {
             'changes': [{
                 'type': 'added',
-                'node_id': new_device.node_id,
+                'node_id': new_device.id,
                 'node_type': 'device',
-                'parent_id': track_node.node_id,
+                'parent_id': track_node.id,
                 'path': f"tracks[{track_idx}].devices[{device_idx}]",
-                'value': {'name': device_name},
+                'new_value': {'name': device_name},
                 'seq_num': seq_num
             }],
-            'added': [new_device.node_id],
+            'added': [new_device.id],
             'removed': [],
             'modified': []
         }
@@ -648,15 +630,15 @@ class ASTServer:
             diff_result = {
                 'changes': [{
                     'type': 'removed',
-                    'node_id': removed_device.node_id,
+                    'node_id': removed_device.id,
                     'node_type': 'device',
-                    'parent_id': track_node.node_id,
+                    'parent_id': track_node.id,
                     'path': f"tracks[{track_idx}].devices[{device_idx}]",
                     'value': {'name': removed_device.attributes.get('name', 'unknown')},
                     'seq_num': seq_num
                 }],
                 'added': [],
-                'removed': [removed_device.node_id],
+                'removed': [removed_device.id],
                 'modified': []
             }
 
@@ -699,7 +681,7 @@ class ASTServer:
         diff_result = {
             'changes': [{
                 'type': 'modified',
-                'node_id': scene_node.node_id,
+                'node_id': scene_node.id,
                 'node_type': 'scene',
                 'path': f"scenes[{scene_idx}]",
                 'old_value': {'name': old_name},
@@ -708,7 +690,7 @@ class ASTServer:
             }],
             'added': [],
             'removed': [],
-            'modified': [scene_node.node_id]
+            'modified': [scene_node.id]
         }
 
         # Broadcast diff
@@ -718,50 +700,555 @@ class ASTServer:
         logger.info(f"Scene {scene_idx} renamed: '{old_name}' → '{new_name}'")
         return {"type": "scene_renamed", "scene_idx": scene_idx, "name": new_name}
 
-    async def _handle_scene_added(self, args: list, seq_num: int, timestamp: float) -> Dict[str, Any]:
-        """
-        Handle scene added event.
+    async def _handle_scene_added(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle scene added event."""
+        logger.info(f"[_handle_scene_added] Invoked with args: {args}, seq_num: {seq_num}")
+        if len(args) < 2:
+            logger.warning(f"[_handle_scene_added] Invalid scene added args: {args}")
+            return None
+            
+        scene_idx = int(args[0])
+        scene_name = str(args[1])
 
-        Note: Scene events are broadcast-only. The client-side AST handles the update,
-        and the server will get the authoritative state from XML on next save.
-        """
-        if len(args) >= 2:
-            scene_idx = int(args[0])
-            scene_name = str(args[1])
-            logger.info(f"Scene {scene_idx} added: '{scene_name}'")
+        # Scene deduplication logic based on scene COUNT, not names
+        # Each scene has a unique ID - names can be duplicates!
+        # Logic:
+        #   - Count current scenes in AST
+        #   - If scene_idx < scene_count: INSERT (shift existing scenes)
+        #   - If scene_idx >= scene_count: APPEND (add new scene at end)
+        scenes = [c for c in self.current_ast.children if c.node_type == NodeType.SCENE]
+        current_scene_count = len(scenes)
 
-        # Return broadcast_only flag - main.py will broadcast the raw event
-        # Client-side AST updater will handle adding the scene
-        return {"type": "scene_added", "broadcast_only": True}
+        logger.info(f"[_handle_scene_added] Current scene count: {current_scene_count}, adding scene at index {scene_idx}")
+
+        # ALWAYS create a new scene (never treat as duplicate)
+        # Scenes have unique IDs - we're always adding a NEW scene
+        logger.info(f"[_handle_scene_added] Creating new scene: '{scene_name}' at index {scene_idx}")
+
+        # Prepare changes for shifting subsequent scenes and clip slots
+        changes = []
+        modified_nodes = []
+
+        # 1. Shift indices of subsequent scenes (>= scene_idx)
+        for scene in scenes:
+            current_idx = scene.attributes.get('index', -1)
+            if current_idx >= scene_idx:
+                new_idx = current_idx + 1
+                scene.attributes['index'] = new_idx
+                changes.append({
+                    'type': 'modified',
+                    'node_id': scene.id,
+                    'node_type': 'scene',
+                    'path': f"scenes[{current_idx}]",
+                    'old_value': {'index': current_idx},
+                    'new_value': {'index': new_idx},
+                    'seq_num': seq_num
+                })
+                modified_nodes.append(scene.id)
+
+        # 2. Shift scene_index of subsequent clip slots in all tracks (>= scene_idx)
+        tracks = [c for c in self.current_ast.children if c.node_type == NodeType.TRACK]
+        for track in tracks:
+            for slot in track.children:
+                if slot.node_type == NodeType.CLIP_SLOT:
+                    current_slot_scene_idx = slot.attributes.get('scene_index', -1)
+                    if current_slot_scene_idx >= scene_idx:
+                        new_slot_scene_idx = current_slot_scene_idx + 1
+                        slot.attributes['scene_index'] = new_slot_scene_idx
+                        changes.append({
+                            'type': 'modified',
+                            'node_id': slot.id,
+                            'node_type': 'clip_slot',
+                            'parent_id': track.id,
+                            'path': f"tracks[{track.attributes.get('index')}].clip_slots[{current_slot_scene_idx}]",
+                            'old_value': {'scene_index': current_slot_scene_idx},
+                            'new_value': {'scene_index': new_slot_scene_idx},
+                            'seq_num': seq_num
+                        })
+                        modified_nodes.append(slot.id)
+
+        # Create new scene node
+        new_scene = SceneNode(
+            name=scene_name,
+            index=scene_idx,
+            id=f"scene_{uuid.uuid4().hex[:8]}"  # Unique ID
+        )
+
+        # Insert scene into project children
+        # Find correct insertion point (after tracks, sorted by index)
+        if not self.current_ast:
+            logger.warning(f"[_handle_scene_added] No current AST, cannot add scene.")
+            return None
+
+        # Note: This is simplified; ideally we respect the mixed list of children
+        # but typically scenes are stored after tracks in the children list
+        scenes = [c for c in self.current_ast.children if c.node_type == NodeType.SCENE]
+        tracks = [c for c in self.current_ast.children if c.node_type == NodeType.TRACK]
+
+        if scene_idx < len(scenes):
+            # Insert at index relative to scenes
+            # Find the actual index in current_ast.children
+            # Strategy: Find the scene currently at scene_idx (if any) and insert before it
+            target_scene = None
+            # Since we just shifted indices, look for scene with index == scene_idx + 1 (was scene_idx)
+            # OR since we inserted *before* shifting in previous logic, let's stick to list position
+            # Actually, we shifted indices in place in the objects, but the list order is unchanged.
+            # We want to insert where the scene with *old* index >= scene_idx starts.
+            # Since we modified the indices, we should look for scene with index == scene_idx + 1
+
+            # Let's find the first scene that has index > scene_idx (which is the one we just shifted from scene_idx)
+            target_scene = None
+            for s in self.current_ast.children:
+                if s.node_type == NodeType.SCENE and s.attributes.get('index') > scene_idx:
+                    target_scene = s
+                    break
+
+            if target_scene:
+                insert_idx = self.current_ast.children.index(target_scene)
+                self.current_ast.children.insert(insert_idx, new_scene)
+                logger.debug(f"[_handle_scene_added] Inserted new scene at index {insert_idx}")
+            else:
+                # Fallback: Append
+                if scenes:
+                    # This case might happen if we are appending but somehow logic fell through
+                    last_scene_idx = self.current_ast.children.index(scenes[-1])
+                    self.current_ast.children.insert(last_scene_idx + 1, new_scene)
+                elif tracks:
+                    last_track_idx = self.current_ast.children.index(tracks[-1])
+                    self.current_ast.children.insert(last_track_idx + 1, new_scene)
+                else:
+                    self.current_ast.children.append(new_scene)
+        else:
+            # Append after the last scene
+            if scenes:
+                last_scene_idx = self.current_ast.children.index(scenes[-1])
+                self.current_ast.children.insert(last_scene_idx + 1, new_scene)
+                logger.debug(f"[_handle_scene_added] Appended after last scene (index {last_scene_idx + 1})")
+            elif tracks:
+                # No scenes, insert after last track
+                last_track_idx = self.current_ast.children.index(tracks[-1])
+                self.current_ast.children.insert(last_track_idx + 1, new_scene)
+                logger.debug(f"[_handle_scene_added] Inserted after last track (index {last_track_idx + 1})")
+            else:
+                # Empty project?
+                self.current_ast.children.append(new_scene)
+                logger.debug(f"[_handle_scene_added] Appended to empty children list")
+
+        hash_tree(new_scene)
+        self._recompute_parent_hashes(new_scene)
+
+        # Add new scene change to list
+        changes.append({
+            'type': 'added',
+            'node_id': new_scene.id,
+            'node_type': 'scene',
+            'parent_id': self.current_ast.id,
+            'path': f"scenes[{scene_idx}]",
+            'new_value': {'name': scene_name, 'index': scene_idx},
+            'seq_num': seq_num
+        })
+
+        diff_result = {
+            'changes': changes,
+            'added': [new_scene.id],
+            'removed': [],
+            'modified': modified_nodes
+        }
+        
+        logger.info(f"[_handle_scene_added] Broadcasting diff_result: {json.dumps(diff_result, indent=2)}")
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+
+        logger.info(f"Scene {scene_idx} added: '{scene_name}'")
+        return {"type": "scene_added", "scene_idx": scene_idx, "name": scene_name}
 
     async def _handle_scene_removed(self, args: list, seq_num: int) -> Dict[str, Any]:
-        """
-        Handle scene removed event.
+        """Handle scene removed event."""
+        if len(args) < 1:
+            return None
+            
+        scene_idx = int(args[0])
+        scene_node = self._find_scene_by_index(scene_idx)
+        
+        if not scene_node:
+            logger.warning(f"Scene {scene_idx} not found for removal")
+            return None
+            
+        # 1. Remove the scene node itself
+        self.current_ast.remove_child(scene_node)
+        
+        # Initialize changes list with the scene removal
+        changes = [{
+            'type': 'removed',
+            'node_id': scene_node.id,
+            'node_type': 'scene',
+            'parent_id': self.current_ast.id,
+            'path': f"scenes[{scene_idx}]",
+            'value': {'name': scene_node.attributes.get('name')},
+            'seq_num': seq_num
+        }]
+        
+        # 2. Remove corresponding clip slots from all tracks
+        # Clip slots are children of tracks, identified by scene_index
+        removed_clip_slot_ids = []
+        tracks = [c for c in self.current_ast.children if c.node_type == NodeType.TRACK]
+        
+        for track in tracks:
+            # Find clip slot with matching scene_index
+            slots_to_remove = []
+            for child in track.children:
+                if (child.node_type == NodeType.CLIP_SLOT and 
+                    child.attributes.get('scene_index') == scene_idx):
+                    slots_to_remove.append(child)
+            
+            for slot in slots_to_remove:
+                track.remove_child(slot)
+                removed_clip_slot_ids.append(slot.id)
+                
+                # Add an explicit change object for this clip slot
+                changes.append({
+                    'type': 'removed',
+                    'node_id': slot.id,
+                    'node_type': 'clip_slot',
+                    'parent_id': track.id,
+                    'path': f"tracks[{track.attributes.get('index')}].clip_slots[{scene_idx}]", 
+                    'value': {},
+                    'seq_num': seq_num
+                })
 
-        Note: Scene events are broadcast-only. The client-side AST handles the update,
-        and the server will get the authoritative state from XML on next save.
-        """
-        if len(args) >= 1:
-            scene_idx = int(args[0])
-            logger.info(f"Scene {scene_idx} removed")
+        # 3. Shift indices of subsequent scenes
+        scenes = [c for c in self.current_ast.children if c.node_type == NodeType.SCENE]
+        for scene in scenes:
+            current_idx = scene.attributes.get('index', -1)
+            if current_idx > scene_idx:
+                new_idx = current_idx - 1
+                scene.attributes['index'] = new_idx
+                changes.append({
+                    'type': 'modified',
+                    'node_id': scene.id,
+                    'node_type': 'scene',
+                    'path': f"scenes[{current_idx}]", # Note: Path might be slightly inaccurate if not array-based, but ok for now
+                    'old_value': {'index': current_idx},
+                    'new_value': {'index': new_idx},
+                    'seq_num': seq_num
+                })
 
-        # Return broadcast_only flag - main.py will broadcast the raw event
-        return {"type": "scene_removed", "broadcast_only": True}
+        # 4. Shift scene_index of subsequent clip slots in all tracks
+        for track in tracks:
+            for slot in track.children:
+                if slot.node_type == NodeType.CLIP_SLOT:
+                    current_slot_scene_idx = slot.attributes.get('scene_index', -1)
+                    if current_slot_scene_idx > scene_idx:
+                        new_slot_scene_idx = current_slot_scene_idx - 1
+                        slot.attributes['scene_index'] = new_slot_scene_idx
+                        changes.append({
+                            'type': 'modified',
+                            'node_id': slot.id,
+                            'node_type': 'clip_slot',
+                            'parent_id': track.id,
+                            'path': f"tracks[{track.attributes.get('index')}].clip_slots[{current_slot_scene_idx}]",
+                            'old_value': {'scene_index': current_slot_scene_idx},
+                            'new_value': {'scene_index': new_slot_scene_idx},
+                            'seq_num': seq_num
+                        })
+
+        # Recompute hashes after all modifications
+        self._recompute_parent_hashes(self.current_ast)
+        
+        diff_result = {
+            'changes': changes,
+            'added': [],
+            'removed': [scene_node.id] + removed_clip_slot_ids,
+            'modified': []
+        }
+        
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+            
+        logger.info(f"Scene {scene_idx} removed. Shifted indices for scenes > {scene_idx}.")
+        return {"type": "scene_removed", "scene_idx": scene_idx}
 
     async def _handle_scene_reordered(self, args: list, seq_num: int) -> Dict[str, Any]:
-        """
-        Handle scene reordered event.
+        """Handle scene reordered event.
 
-        Note: Scene events are broadcast-only. The client-side AST handles the update,
-        and the server will get the authoritative state from XML on next save.
-        """
-        if len(args) >= 2:
-            scene_idx = int(args[0])
-            scene_name = str(args[1])
-            logger.info(f"Scene '{scene_name}' reordered to index {scene_idx}")
+        NOTE: Scene reorder events are IGNORED because:
+        1. They cannot reliably identify which scene moved (scenes can have duplicate names)
+        2. Our scene_added and scene_removed handlers already handle index shifting correctly
+        3. Processing these events causes duplicate clip slots when scenes have empty/duplicate names
 
-        # Return broadcast_only flag - main.py will broadcast the raw event
-        return {"type": "scene_reordered", "broadcast_only": True}
+        The reorder events are sent by Ableton BEFORE scene_added, creating race conditions.
+        """
+        if len(args) < 2:
+            return None
+
+        new_idx = int(args[0])
+        scene_name = str(args[1])
+
+        logger.debug(f"Ignoring scene_reordered event: [{ new_idx}, '{scene_name}'] - handled by scene_added/removed")
+
+        # Return success without making changes
+        return {"type": "scene_reordered", "scene_idx": new_idx, "ignored": True}
+
+    async def _handle_clip_slot_created(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle clip slot created event."""
+        logger.info(f"[_handle_clip_slot_created] Invoked with args: {args}, seq_num: {seq_num}")
+        if len(args) < 5:
+            logger.warning(f"[_handle_clip_slot_created] Invalid clip slot created args: {args}")
+            return None
+            
+        track_idx = int(args[0])
+        scene_idx = int(args[1])
+        has_clip = bool(args[2])
+        has_stop = bool(args[3])
+        playing_status = int(args[4])
+        
+        track_node = self._find_track_by_index(track_idx)
+        if not track_node:
+            logger.warning(f"[_handle_clip_slot_created] Track {track_idx} not found for clip slot creation.")
+            return None
+            
+        # Check for existing clip slot (deduplication)
+        # Clip slots are identified by their scene_index attribute in our AST model
+        existing_slot = None
+        for child in track_node.children:
+            if (child.node_type == NodeType.CLIP_SLOT and 
+                child.attributes.get('scene_index') == scene_idx):
+                existing_slot = child
+                break
+        
+        if existing_slot:
+            logger.info(f"[_handle_clip_slot_created] Clip slot [{track_idx},{scene_idx}] already exists, updating attributes.")
+            # Update existing slot
+            # We only need to update attributes if they changed, but for simplicity we update all
+            # that might have come from the event
+            existing_slot.attributes['has_clip'] = has_clip
+            existing_slot.attributes['has_stop_button'] = has_stop
+            existing_slot.attributes['playing_status'] = playing_status
+            existing_slot.attributes['is_playing'] = (playing_status == 1)
+            existing_slot.attributes['is_triggered'] = (playing_status == 2)
+            
+            hash_tree(existing_slot)
+            self._recompute_parent_hashes(track_node)
+            
+            # Send 'modified' diff instead of 'added'
+            diff_result = {
+                'changes': [{
+                    'type': 'modified',
+                    'node_id': existing_slot.id,
+                    'node_type': 'clip_slot',
+                    'path': f"tracks[{track_idx}].clip_slots[{scene_idx}]",
+                    'old_value': {}, # Not tracking old values for this dedupe
+                    'new_value': {
+                        'has_clip': has_clip,
+                        'playing_status': playing_status
+                    },
+                    'seq_num': seq_num
+                }],
+                'added': [],
+                'removed': [],
+                'modified': [existing_slot.id]
+            }
+        else:
+            logger.info(f"[_handle_clip_slot_created] Creating new clip slot: [{track_idx},{scene_idx}]")
+            # Create new clip slot node
+            new_slot = ClipSlotNode(
+                track_index=track_idx,
+                scene_index=scene_idx,
+                id=f"clip_slot_{uuid.uuid4().hex[:8]}"
+            )
+            new_slot.attributes['has_clip'] = has_clip
+            new_slot.attributes['has_stop_button'] = has_stop
+            new_slot.attributes['playing_status'] = playing_status
+            new_slot.attributes['is_playing'] = (playing_status == 1)
+            new_slot.attributes['is_triggered'] = (playing_status == 2)
+            
+            # Insert in correct order (by scene_index)
+            # Find correct position
+            insert_pos = len(track_node.children)
+            # Try to find insertion point among other clip slots
+            clip_slots = [c for c in track_node.children if c.node_type == NodeType.CLIP_SLOT]
+            for slot in clip_slots:
+                if slot.attributes.get('scene_index') > scene_idx:
+                    insert_pos = track_node.children.index(slot)
+                    break
+            
+            if insert_pos < len(track_node.children):
+                track_node.children.insert(insert_pos, new_slot)
+                logger.debug(f"[_handle_clip_slot_created] Inserted new clip slot at index {insert_pos}")
+            else:
+                # If no slot with higher index, insert before mixer if possible, or at end
+                # Usually clip slots are before mixer
+                mixer_node = next((c for c in track_node.children if c.node_type == NodeType.MIXER), None)
+                if mixer_node:
+                    insert_pos = track_node.children.index(mixer_node)
+                    track_node.children.insert(insert_pos, new_slot)
+                    logger.debug(f"[_handle_clip_slot_created] Inserted new clip slot before mixer at index {insert_pos}")
+                else:
+                    track_node.children.append(new_slot)
+                    logger.debug(f"[_handle_clip_slot_created] Appended new clip slot to track children")
+            
+            hash_tree(track_node)
+            self._recompute_parent_hashes(track_node)
+            
+            diff_result = {
+                'changes': [{
+                    'type': 'added',
+                    'node_id': new_slot.id,
+                    'node_type': 'clip_slot',
+                    'parent_id': track_node.id,
+                    'path': f"tracks[{track_idx}].clip_slots[{scene_idx}]",
+                    'new_value': {
+                        'track_index': track_idx,
+                        'scene_index': scene_idx,
+                        'has_clip': has_clip,
+                        'playing_status': playing_status
+                    },
+                    'seq_num': seq_num
+                }],
+                'added': [new_slot.id],
+                'removed': [],
+                'modified': []
+            }
+        
+        logger.info(f"[_handle_clip_slot_created] Broadcasting diff_result: {json.dumps(diff_result, indent=2)}")
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+            
+        logger.info(f"Clip slot created for track {track_idx}, scene {scene_idx}")
+        return {"type": "clip_slot_created", "track_idx": track_idx, "scene_idx": scene_idx}
+        
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+            
+        return {"type": "clip_slot_created", "track_idx": track_idx, "scene_idx": scene_idx}
+
+    async def _handle_transport_event(self, event_path: str, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle transport events (updates Project attributes)."""
+        if not self.current_ast or len(args) < 1:
+            return None
+            
+        attribute = ""
+        value = args[0]
+        
+        if event_path == "/live/transport/play":
+            attribute = "is_playing"
+            value = bool(value)
+        elif event_path == "/live/transport/tempo":
+            attribute = "tempo"
+            value = float(value)
+        elif event_path == "/live/transport/position":
+            attribute = "position"
+            value = float(value)
+            
+        if not attribute:
+            return None
+            
+        old_value = self.current_ast.attributes.get(attribute)
+        self.current_ast.attributes[attribute] = value
+        
+        # Lightweight update (no rehash for transport)
+        
+        diff_result = {
+            'changes': [{
+                'type': 'state_changed',
+                'node_id': self.current_ast.id,
+                'node_type': 'project',
+                'path': "project",
+                'attribute': attribute,
+                'old_value': old_value,
+                'new_value': value,
+                'seq_num': seq_num
+            }],
+            'added': [],
+            'removed': [],
+            'modified': [self.current_ast.id]
+        }
+        
+        if self.websocket_server and self.websocket_server.is_running():
+            await self.websocket_server.broadcast_diff(diff_result)
+            
+        return {"type": "transport_event", "attribute": attribute, "value": value}
+
+    # Parameter update throttling
+    _param_update_tasks = {}
+    
+    async def _handle_device_param(self, args: list, seq_num: int) -> Dict[str, Any]:
+        """Handle device parameter change with debouncing."""
+        if len(args) < 4:
+            return None
+            
+        track_idx = int(args[0])
+        device_idx = int(args[1])
+        param_idx = int(args[2])
+        value = float(args[3])
+        
+        # Find device node
+        track_node = self._find_track_by_index(track_idx)
+        if not track_node:
+            return None
+            
+        # Naive device finding (assumes order)
+        device_node = None
+        devices = [c for c in track_node.children if c.node_type == NodeType.DEVICE]
+        if device_idx < len(devices):
+            device_node = devices[device_idx]
+            
+        if not device_node:
+            return None
+            
+        # Update parameter in AST
+        # Note: DeviceNode stores params in attributes['parameters'] list of dicts
+        params = device_node.attributes.get('parameters', [])
+        if param_idx < len(params):
+            params[param_idx]['value'] = value
+        else:
+            # Expand list if needed (simple handling)
+            while len(params) <= param_idx:
+                params.append({'value': 0, 'name': 'Unknown'})
+            params[param_idx]['value'] = value
+        
+        device_node.attributes['parameters'] = params
+        
+        # Debounced Broadcast
+        # Use a tuple key for the parameter
+        param_key = (track_idx, device_idx, param_idx)
+        
+        async def broadcast_later():
+            await asyncio.sleep(0.1) # 100ms debounce
+            
+            # Check if we are the last task
+            if self._param_update_tasks.get(param_key) == asyncio.current_task():
+                # Generate and broadcast diff
+                diff_result = {
+                    'changes': [{
+                        'type': 'state_changed',
+                        'node_id': device_node.id,
+                        'node_type': 'device',
+                        'path': f"tracks[{track_idx}].devices[{device_idx}].parameters[{param_idx}]",
+                        'attribute': 'value', # generic attribute name
+                        'value': value, # simplified for frontend
+                        'param_index': param_idx,
+                        'new_value': value,
+                        'seq_num': seq_num
+                    }],
+                    'added': [],
+                    'removed': [],
+                    'modified': [device_node.id]
+                }
+                if self.websocket_server and self.websocket_server.is_running():
+                    await self.websocket_server.broadcast_diff(diff_result)
+                
+                del self._param_update_tasks[param_key]
+
+        # Cancel existing task
+        if param_key in self._param_update_tasks:
+            self._param_update_tasks[param_key].cancel()
+            
+        # Schedule new task
+        task = asyncio.create_task(broadcast_later())
+        self._param_update_tasks[param_key] = task
+        
+        return {"type": "param_event", "track": track_idx, "device": device_idx, "param": param_idx, "value": value}
 
     def _find_track_by_index(self, index: int) -> Optional[TrackNode]:
         """Find a track node by its index."""

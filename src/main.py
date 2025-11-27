@@ -16,6 +16,51 @@ from src.udp_listener.listener import UDPListener
 logger = logging.getLogger(__name__)
 
 
+def setup_logging(log_file: Path = None, level: str = "INFO"):
+    """
+    Configure logging to both file and console.
+    
+    Args:
+        log_file: Path to log file (optional)
+        level: Logging level (DEBUG, INFO, WARNING, ERROR)
+    """
+    # Create formatters
+    detailed_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    simple_formatter = logging.Formatter(
+        '%(levelname)s: %(message)s'
+    )
+    
+    # Root logger configuration
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, level.upper()))
+    
+    # Clear existing handlers
+    root_logger.handlers = []
+    
+    # Console handler (simple format)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(simple_formatter)
+    root_logger.addHandler(console_handler)
+    
+    # File handler (detailed format)
+    if log_file:
+        log_file = Path(log_file)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        file_handler = logging.FileHandler(log_file, mode='a')
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(detailed_formatter)
+        root_logger.addHandler(file_handler)
+        
+        logger.info(f"Logging to file: {log_file}")
+    
+    return root_logger
+
+
 class XMLFileWatcher(FileSystemEventHandler):
     """Watches XML file for changes and triggers AST reload."""
 
@@ -101,25 +146,7 @@ async def run_websocket_server(path: Path, host: str, port: int, use_signals: bo
     async def udp_event_callback(event_path: str, args: list, seq_num: int, timestamp: float):
         """Handle UDP events from Ableton Live and broadcast changes."""
         try:
-            # Check for sequence gaps (missed UDP events)
-            if last_seq_num[0] > 0:
-                gap = seq_num - last_seq_num[0] - 1
-                if gap > 0:
-                    print(f"[UDP] Detected gap of {gap} events (seq {last_seq_num[0]+1} to {seq_num-1})")
-                    logger.warning(f"[UDP] Detected gap of {gap} events (seq {last_seq_num[0]+1} to {seq_num-1})")
-
-                    # If gap exceeds threshold, trigger XML reload as fallback
-                    if gap >= gap_threshold:
-                        print(f"[UDP] Gap exceeds threshold ({gap} >= {gap_threshold}), triggering XML reload fallback")
-                        logger.warning(f"[UDP] Gap exceeds threshold ({gap} >= {gap_threshold}), triggering XML reload fallback")
-                        # Broadcast error immediately (don't use create_task to ensure it's sent)
-                        if server.websocket_server and server.websocket_server.is_running():
-                            await server.websocket_server.broadcast_error(
-                                "UDP event gap detected",
-                                f"Missed {gap} events. Waiting for XML file update for full sync."
-                            )
-                        # The XMLFileWatcher will handle reloading when the file is saved
-
+            # Update sequence tracking
             last_seq_num[0] = seq_num
 
             logger.info(f"[UDP Event #{seq_num}] {event_path} {args}")
@@ -141,22 +168,9 @@ async def run_websocket_server(path: Path, host: str, port: int, use_signals: bo
                     logger.debug(f"[UDP] Cursor event broadcasted: {event_path}")
             else:
                 # AST events: process and update AST
-                result = await server.process_live_event(event_path, args, seq_num, timestamp)
+                # The ASTServer now handles broadcasting the resulting diffs for all events
+                await server.process_live_event(event_path, args, seq_num, timestamp)
 
-                # If event requires broadcast-only (no AST update), send raw event
-                if result and result.get('broadcast_only'):
-                    if server.websocket_server and server.websocket_server.is_running():
-                        # Create a real-time event message (for transport/params)
-                        event_message = {
-                            'type': 'live_event',
-                            'payload': {
-                                'event_path': event_path,
-                                'args': args,
-                                'seq_num': seq_num,
-                                'timestamp': timestamp
-                            }
-                        }
-                        await server.websocket_server.broadcaster.broadcast(event_message)
 
         except Exception as e:
             logger.error(f"Error handling UDP event: {e}")
@@ -166,7 +180,24 @@ async def run_websocket_server(path: Path, host: str, port: int, use_signals: bo
     print(f"Starting UDP listener on 0.0.0.0:9002")
 
     # Start UDP listener in background task
-    udp_task = asyncio.create_task(udp_listener.start())
+    # We use a wrapper to catch startup errors immediately
+    async def start_udp_safe():
+        try:
+            await udp_listener.start()
+        except Exception as e:
+            logger.error(f"UDP Listener failed to start: {e}")
+            # Signal the main loop to stop
+            stop_event.set()
+            raise e
+
+    udp_task = asyncio.create_task(start_udp_safe())
+    
+    # Give the listener a moment to bind ports and fail if needed
+    await asyncio.sleep(0.1)
+    if udp_task.done() and udp_task.exception():
+        print(f"UDP Listener failed to start: {udp_task.exception()}")
+        # Clean up and exit
+        return
 
     # Start WebSocket server
     await server.start_websocket_server()
@@ -257,6 +288,9 @@ def main():
         print("  --ws-host=HOST    - WebSocket host (default: localhost)")
         print("  --ws-port=PORT    - WebSocket port (default: 8765)")
         print("  --no-signals      - Disable signal handlers (for hs.task)")
+        print("\nLogging Options:")
+        print("  --log-file=PATH   - Log to file (default: stdout only)")
+        print("  --log-level=LEVEL - Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)")
         sys.exit(1)
 
     path = Path(sys.argv[1])
@@ -264,6 +298,8 @@ def main():
     ws_host = "localhost"
     ws_port = 8765
     use_signals = True
+    log_file = None
+    log_level = "INFO"
 
     # Parse optional arguments
     if len(sys.argv) > 2:
@@ -276,6 +312,13 @@ def main():
                 ws_port = int(arg.split("=")[1])
             elif arg == "--no-signals":
                 use_signals = False
+            elif arg.startswith("--log-file="):
+                log_file = Path(arg.split("=")[1])
+            elif arg.startswith("--log-level="):
+                log_level = arg.split("=")[1]
+
+    # Setup logging
+    setup_logging(log_file=log_file, level=log_level)
 
     if mode == "websocket":
         # Run WebSocket server

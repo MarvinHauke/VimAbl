@@ -64,6 +64,7 @@ class ASTSerializer:
             JSON-compatible diff representation
         """
         return {
+            'changes': diff_result.get('changes', []),
             'added': diff_result.get('added', []),
             'removed': diff_result.get('removed', []),
             'modified': diff_result.get('modified', []),
