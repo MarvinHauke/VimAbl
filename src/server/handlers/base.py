@@ -31,6 +31,9 @@ class EventResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     modified_nodes: List[ASTNode] = field(default_factory=list)
 
+    def __bool__(self):
+        return self.success
+
     @classmethod
     def ok(cls, diff: Dict[str, Any] = None, **metadata) -> "EventResult":
         """Create a successful result."""

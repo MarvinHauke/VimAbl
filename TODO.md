@@ -1934,3 +1934,150 @@ src/server/
    - Catches regressions
 
 ---
+
+## Phase 12: WebSocket Communication Optimization
+
+**Priority: HIGH**
+**Dependencies: Phase 1-3 (WebSocket infrastructure complete)**
+**Goal: Optimize message exchange between AST server and Svelte frontend**
+
+### Overview
+
+Current WebSocket communication is functional but has performance bottlenecks for large projects:
+- **Large FULL_AST messages** (1-5 MB) block UI for 200-950ms
+- **No chunking** or progressive loading
+- **Synchronous JSON parsing** freezes browser
+- **O(n) tree lookups** in frontend
+- **Too many DIFF messages** during rapid parameter changes
+
+**Documentation**: `docs/architecture/websocket-communication-analysis.md`
+
+### Phase 12a: Quick Wins (Frontend Optimizations) 🔥
+
+**Priority: HIGH**
+**Estimated Time**: 2-4 hours
+**Goal**: Immediate performance gains with minimal changes
+
+- [ ] **Add Node Index Map to Frontend**
+  - [ ] Create `nodeIndex: Map<string, ASTNode>` in `ast.svelte.ts`
+  - [ ] Build index in `setAST()` method
+  - [ ] Build index in `_indexNode()` recursive helper
+  - [ ] Use O(1) lookups in `applyDiff()` instead of tree traversal
+  - [ ] Update index on node additions/removals
+  - [ ] Test with large project (50+ tracks)
+
+- [ ] **Optimize Diff Application**
+  - [ ] Batch Svelte reactivity updates
+  - [ ] Use `$effect.pre()` for pre-render optimizations
+  - [ ] Minimize unnecessary re-renders
+  - [ ] Profile with Chrome DevTools
+
+- [ ] **Enable Diff Batching in Backend**
+  - [ ] Use existing `DebouncedBroadcaster` for device params
+  - [ ] Use existing `DebouncedBroadcaster` for tempo changes
+  - [ ] Configure 50-100ms delay for high-frequency events
+  - [ ] Test with rapid parameter changes (fader sweeps)
+
+**Expected Results**:
+- ✅ 10-100x faster diff application
+- ✅ Fewer WebSocket messages
+- ✅ Less frontend re-rendering
+
+### Phase 12b: Web Worker for JSON Parsing 🔥
+
+**Priority: HIGH**
+**Estimated Time**: 2-3 hours
+**Goal**: Eliminate UI freeze during large AST loads
+
+- [ ] **Create AST Parser Web Worker**
+  - [ ] Create `src/web/frontend/src/lib/workers/ast-parser.worker.ts`
+  - [ ] Implement `PARSE_AST` message handler
+  - [ ] Implement `AST_PARSED` response
+  - [ ] Handle errors gracefully
+
+- [ ] **Integrate Worker into WebSocket Client**
+  - [ ] Update `src/lib/api/websocket.ts`
+  - [ ] Offload `JSON.parse()` to worker
+  - [ ] Use `postMessage()` / `onmessage` pattern
+  - [ ] Add loading state while parsing
+
+- [ ] **Add Performance Monitoring**
+  - [ ] Track parse time
+  - [ ] Track main thread freeze time
+  - [ ] Display metrics in UI (dev mode)
+  - [ ] Console.log performance stats
+
+**Expected Results**:
+- ✅ Zero UI freeze (main thread stays responsive)
+- ✅ No "unresponsive script" warnings
+- ✅ Better user experience on large projects
+
+### Phase 12c: Chunked AST Loading (Progressive Rendering) 🟡
+
+**Priority: MEDIUM**
+**Estimated Time**: 4-6 hours
+**Goal**: Progressive loading for very large projects
+
+- [ ] **Backend: Chunked Serialization**
+  - [ ] Create `create_chunked_ast_message()` in `serializers.py`
+  - [ ] Implement `CHUNK_START` message type
+  - [ ] Implement `CHUNK_DATA` message type (10 tracks per chunk)
+  - [ ] Implement `CHUNK_END` message type
+  - [ ] Update `ASTWebSocketServer` to support chunking
+
+- [ ] **Frontend: Progressive AST Builder**
+  - [ ] Create `ChunkedASTLoader` class
+  - [ ] Handle `CHUNK_START` (show loading progress)
+  - [ ] Handle `CHUNK_DATA` (append nodes incrementally)
+  - [ ] Handle `CHUNK_END` (finalize loading)
+  - [ ] Add loading progress indicator component
+  - [ ] Yield to UI thread between chunks (`setTimeout(0)`)
+
+- [ ] **Testing**
+  - [ ] Test with small project (8 tracks)
+  - [ ] Test with medium project (20 tracks)
+  - [ ] Test with large project (50+ tracks)
+  - [ ] Verify progressive rendering works
+  - [ ] Measure perceived load time improvement
+
+**Expected Results**:
+- ✅ 500ms → 100ms perceived load time
+- ✅ User sees partial results immediately
+- ✅ Graceful handling of slow connections
+
+### Phase 12d: WebSocket Compression (Optional) 🟢
+
+**Priority: LOW**
+**Estimated Time**: 1-2 hours
+**Goal**: Reduce network bandwidth for remote deployments
+
+- [ ] **Enable permessage-deflate**
+  - [ ] Add `compression='deflate'` to websockets.serve()
+  - [ ] Test compression ratio
+  - [ ] Measure CPU overhead
+  - [ ] Document tradeoffs
+
+**Note**: Only useful for remote connections. Localhost is already fast enough.
+
+---
+
+### Phase 12 Timeline
+
+**Total Estimated Time**: 8-13 hours
+
+**Recommended Order**:
+1. **Phase 12a** (Quick Wins) - 2-4 hours ← **START HERE**
+2. **Phase 12b** (Web Worker) - 2-3 hours
+3. **Phase 12c** (Chunked Loading) - 4-6 hours (if needed)
+4. **Phase 12d** (Compression) - Skip for now (localhost only)
+
+**Performance Targets**:
+
+| Metric | Current | Target | Phase |
+|--------|---------|--------|-------|
+| Initial load (50 tracks) | 500-950ms | <200ms | 12b + 12c |
+| DIFF update latency | <20ms | <10ms | 12a |
+| UI freeze during load | 100-500ms | 0ms | 12b |
+| Messages/sec (rapid changes) | 50-100 | 5-10 | 12a |
+
+---

@@ -105,6 +105,10 @@ class TrackEventHandler(BaseEventHandler):
         old_value = track_node.attributes.get(attribute)
         track_node.attributes[attribute] = value
 
+        # Update hashes
+        hash_tree(track_node)
+        self._recompute_parent_hashes(track_node)
+
         # Generate diff
         change = DiffGenerator.create_state_changed(
             node_id=track_node.id,
