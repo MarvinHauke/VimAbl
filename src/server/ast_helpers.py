@@ -25,6 +25,12 @@ from ..ast import (
     MixerNode,
     hash_tree,
 )
+from .constants import (
+    EventConstants,
+    NodeIDPatterns,
+    ClipType,
+    PlayingStatus,
+)
 
 
 class ASTNavigator:
@@ -293,6 +299,124 @@ class SceneIndexManager:
         return changes
 
 
+class ClipSlotManager:
+    """Helper class for managing clip slot operations."""
+
+    @staticmethod
+    def find_existing_slot(
+        track_node: TrackNode,
+        scene_idx: int
+    ) -> Optional[ClipSlotNode]:
+        """
+        Find existing clip slot by scene index.
+
+        Args:
+            track_node: The track to search in
+            scene_idx: Scene index to match
+
+        Returns:
+            ClipSlotNode if found, None otherwise
+        """
+        for child in track_node.children:
+            if (child.node_type == NodeType.CLIP_SLOT and
+                child.attributes.get('scene_index') == scene_idx):
+                return child
+        return None
+
+    @staticmethod
+    def insert_clip_slot(
+        track_node: TrackNode,
+        new_slot: ClipSlotNode,
+        scene_idx: int
+    ) -> None:
+        """
+        Insert clip slot in correct position within track.
+
+        Clip slots are ordered by scene_index. This method:
+        1. Tries to insert before the first slot with higher scene_index
+        2. Falls back to inserting before mixer node
+        3. Falls back to appending to track children
+
+        Args:
+            track_node: Track to insert into
+            new_slot: New clip slot node
+            scene_idx: Scene index of the new slot
+        """
+        # Find insertion point among clip slots
+        clip_slots = [c for c in track_node.children
+                     if c.node_type == NodeType.CLIP_SLOT]
+
+        # Try to find a slot with higher scene index
+        for slot in clip_slots:
+            if slot.attributes.get('scene_index') > scene_idx:
+                insert_idx = track_node.children.index(slot)
+                track_node.children.insert(insert_idx, new_slot)
+                return
+
+        # No slot with higher index found, insert before mixer if possible
+        mixer_node = next((c for c in track_node.children
+                          if c.node_type == NodeType.MIXER), None)
+        if mixer_node:
+            insert_idx = track_node.children.index(mixer_node)
+            track_node.children.insert(insert_idx, new_slot)
+        else:
+            # No mixer, just append
+            track_node.children.append(new_slot)
+
+    @staticmethod
+    def update_clip_slot_attributes(
+        slot: ClipSlotNode,
+        has_clip: bool,
+        has_stop: bool,
+        playing_status: int
+    ) -> None:
+        """
+        Update clip slot attributes from event data.
+
+        Args:
+            slot: Clip slot node to update
+            has_clip: Whether slot contains a clip
+            has_stop: Whether slot has stop button
+            playing_status: Playing status code (see PlayingStatus enum)
+        """
+        slot.attributes['has_clip'] = has_clip
+        slot.attributes['has_stop_button'] = has_stop
+        slot.attributes['playing_status'] = playing_status
+        slot.attributes['is_playing'] = (playing_status == PlayingStatus.PLAYING)
+        slot.attributes['is_triggered'] = (playing_status == PlayingStatus.TRIGGERED)
+
+    @staticmethod
+    def create_clip_slot_node(
+        track_idx: int,
+        scene_idx: int,
+        has_clip: bool = False,
+        has_stop: bool = True,
+        playing_status: int = PlayingStatus.STOPPED
+    ) -> ClipSlotNode:
+        """
+        Create a new clip slot node with attributes.
+
+        Args:
+            track_idx: Track index
+            scene_idx: Scene index
+            has_clip: Whether slot has a clip
+            has_stop: Whether slot has stop button
+            playing_status: Playing status code
+
+        Returns:
+            New ClipSlotNode with attributes set
+        """
+        slot = ClipSlotNode(
+            track_index=track_idx,
+            scene_index=scene_idx,
+            id=NodeIDPatterns.clip_slot(uuid.uuid4().hex[:8])
+        )
+        ClipSlotManager.update_clip_slot_attributes(
+            slot, has_clip, has_stop, playing_status
+        )
+        return slot
+
+
 class ASTBuilder:
     """Helper class for building AST node trees from raw parser data."""
 
@@ -324,7 +448,7 @@ class ASTBuilder:
             track_node = TrackNode(
                 name=track_data["name"],
                 index=track_data["index"],
-                id=f"track_{track_data['index']}"
+                id=NodeIDPatterns.track(track_data['index'])
             )
 
             # Set track type (regular, return, or master)
@@ -352,8 +476,8 @@ class ASTBuilder:
         for device_idx, device_data in enumerate(track_data.get("devices", [])):
             device_node = DeviceNode(
                 name=device_data.get("name", "Unknown"),
-                device_type=device_data.get("type", "unknown"),
-                id=f"device_{track_data['index']}_{device_idx}"
+                device_type=device_data.get("type", EventConstants.DEFAULT_DEVICE_TYPE),
+                id=NodeIDPatterns.device(track_data['index'], device_idx)
             )
             device_node.attributes['is_enabled'] = device_data.get("is_enabled", True)
             device_node.attributes['plugin_info'] = device_data.get("plugin_info", {})
@@ -369,7 +493,7 @@ class ASTBuilder:
             clip_slot_node = ClipSlotNode(
                 track_index=track_data["index"],
                 scene_index=scene_idx,
-                id=f"clip_slot_{uuid.uuid4().hex[:8]}"
+                id=NodeIDPatterns.clip_slot(uuid.uuid4().hex[:8])
             )
 
             # Set clip slot properties
@@ -388,26 +512,26 @@ class ASTBuilder:
     def _build_clip(clip_data: Dict, track_idx: int, scene_idx: int) -> ClipNode:
         """Build a clip node from clip data."""
         clip_node = ClipNode(
-            name=clip_data.get("name", "Untitled"),
-            clip_type=clip_data.get("type", "midi"),
-            id=f"clip_{track_idx}_{scene_idx}"
+            name=clip_data.get("name", EventConstants.DEFAULT_CLIP_NAME),
+            clip_type=clip_data.get("type", EventConstants.DEFAULT_CLIP_TYPE),
+            id=NodeIDPatterns.clip(track_idx, scene_idx)
         )
         clip_node.attributes['start_time'] = clip_data.get("start_time", 0.0)
         clip_node.attributes['end_time'] = clip_data.get("end_time", 0.0)
         clip_node.attributes['loop_start'] = clip_data.get("loop_start", 0.0)
         clip_node.attributes['loop_end'] = clip_data.get("loop_end", 0.0)
         clip_node.attributes['is_looped'] = clip_data.get("is_looped", True)
-        clip_node.attributes['color'] = clip_data.get("color", -1)
-        clip_node.attributes['view'] = clip_data.get("view", "session")
+        clip_node.attributes['color'] = clip_data.get("color", EventConstants.DEFAULT_COLOR)
+        clip_node.attributes['view'] = clip_data.get("view", EventConstants.DEFAULT_CLIP_VIEW)
 
         # Add type-specific attributes
-        if clip_data.get("type") == "midi":
+        if clip_data.get("type") == ClipType.MIDI:
             clip_node.attributes['note_count'] = clip_data.get("note_count", 0)
             clip_node.attributes['has_notes'] = clip_data.get("has_notes", False)
-        elif clip_data.get("type") == "audio":
+        elif clip_data.get("type") == ClipType.AUDIO:
             clip_node.attributes['sample_name'] = clip_data.get("sample_name", "")
             clip_node.attributes['is_warped'] = clip_data.get("is_warped", False)
-            clip_node.attributes['warp_mode'] = clip_data.get("warp_mode", "Unknown")
+            clip_node.attributes['warp_mode'] = clip_data.get("warp_mode", EventConstants.DEFAULT_WARP_MODE)
 
         return clip_node
 
@@ -417,13 +541,13 @@ class ASTBuilder:
         mixer_data = track_data.get("mixer")
         if mixer_data:
             mixer_node = MixerNode(
-                volume=mixer_data.get("volume", 1.0),
-                pan=mixer_data.get("pan", 0.0),
-                id=f"mixer_{track_data['index']}"
+                volume=mixer_data.get("volume", EventConstants.DEFAULT_VOLUME),
+                pan=mixer_data.get("pan", EventConstants.DEFAULT_PAN),
+                id=NodeIDPatterns.mixer(track_data['index'])
             )
             mixer_node.attributes['is_muted'] = mixer_data.get("is_muted", False)
             mixer_node.attributes['is_soloed'] = mixer_data.get("is_soloed", False)
-            mixer_node.attributes['crossfader'] = mixer_data.get("crossfader", "None")
+            mixer_node.attributes['crossfader'] = mixer_data.get("crossfader", EventConstants.DEFAULT_CROSSFADER)
             mixer_node.attributes['sends'] = mixer_data.get("sends", [])
 
             track_node.add_child(mixer_node)
@@ -435,12 +559,12 @@ class ASTBuilder:
             scene_node = SceneNode(
                 name=scene_data.get("name", ""),
                 index=scene_data.get("index", 0),
-                id=f"scene_{uuid.uuid4().hex[:8]}"
+                id=NodeIDPatterns.scene(uuid.uuid4().hex[:8])
             )
-            scene_node.attributes['color'] = scene_data.get("color", -1)
-            scene_node.attributes['tempo'] = scene_data.get("tempo", 120.0)
+            scene_node.attributes['color'] = scene_data.get("color", EventConstants.DEFAULT_COLOR)
+            scene_node.attributes['tempo'] = scene_data.get("tempo", EventConstants.DEFAULT_TEMPO)
             scene_node.attributes['is_tempo_enabled'] = scene_data.get("is_tempo_enabled", False)
-            scene_node.attributes['time_signature_id'] = scene_data.get("time_signature_id", 201)
+            scene_node.attributes['time_signature_id'] = scene_data.get("time_signature_id", EventConstants.DEFAULT_TIME_SIGNATURE_ID)
             scene_node.attributes['is_time_signature_enabled'] = scene_data.get("is_time_signature_enabled", False)
             scene_node.attributes['annotation'] = scene_data.get("annotation", "")
 
@@ -451,7 +575,7 @@ class ASTBuilder:
         """Build file reference nodes and add them to the project."""
         for i, ref_data in enumerate(raw_ast.get("file_refs", [])):
             hash_val = ref_data.get("hash")
-            ref_id = f"fileref_{hash_val[:8]}" if hash_val else f"fileref_{i}"
+            ref_id = NodeIDPatterns.file_ref(hash_hex=hash_val, index=i)
 
             ref_node = FileRefNode(
                 name=ref_data.get("name"),

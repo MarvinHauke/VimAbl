@@ -1606,3 +1606,331 @@ In `src/web/frontend/package.json`:
 3. **Use Example_Project/** for testing throughout
 4. **Document as you go** - Add comments and docstrings
 5. **Consider branch strategy** - Use `feature/web-treeviewer` branch
+
+---
+
+## Phase 11: Server Architecture Refactoring
+
+**Priority: HIGH**
+**Dependencies: None (improves existing codebase)**
+**Goal: Refactor src/server/api.py into modular, maintainable architecture**
+
+### Overview
+
+The `ASTServer` class has grown to 1000+ lines with 35 methods handling multiple concerns. This phase refactors it into a clean, modular architecture with separation of concerns.
+
+**Current Issues:**
+- Single 1000+ line file with too many responsibilities
+- Event handlers mixed with query methods
+- Duplicated validation and error handling
+- Hard to test individual components
+- Difficult to add new event types
+
+**Target Architecture:**
+```
+src/server/
+├── api.py                  # Main orchestrator (~200 lines)
+├── constants.py            # ✅ Constants and enums
+├── ast_helpers.py          # ✅ AST manipulation utilities
+│
+├── handlers/               # Event handlers (by domain)
+│   ├── base.py            # Base handler class + decorators
+│   ├── track_handler.py   # Track events
+│   ├── scene_handler.py   # Scene events
+│   ├── device_handler.py  # Device events
+│   ├── clip_slot_handler.py  # Clip slot events
+│   └── transport_handler.py  # Transport events
+│
+├── services/              # Business logic services
+│   ├── query_service.py   # AST querying operations
+│   ├── project_service.py # Project loading/management
+│   └── diff_service.py    # Diff computations
+│
+├── validation/            # Input validation
+│   ├── validators.py      # Argument validators
+│   └── schemas.py         # Event argument schemas
+│
+├── utils/                 # Reusable utilities
+│   ├── debouncer.py      # Debouncing utility
+│   ├── cache.py          # Caching layer
+│   └── metrics.py        # Telemetry/metrics
+│
+└── testing/               # Testing infrastructure
+    ├── fixtures.py       # Test fixtures
+    └── factories.py      # Object factories
+```
+
+### Phase 11a: Foundation - Validators & Result Builders ✅ COMPLETE
+
+**Estimated Time**: 4-6 hours
+**Status**: PENDING
+
+- [ ] Create `src/server/validation/` module
+  - [ ] Create `validators.py` with argument validation schemas
+    - [ ] `TrackRenamedArgs` - Validate track rename events
+    - [ ] `DeviceAddedArgs` - Validate device add events
+    - [ ] `ClipSlotCreatedArgs` - Validate clip slot creation
+    - [ ] Add validation decorators (@validate_args)
+  - [ ] Create `schemas.py` with TypedDict definitions
+    - [ ] All event argument types
+    - [ ] Diff result types
+    - [ ] Query result types
+- [ ] Create `src/server/handlers/base.py`
+  - [ ] `EventResult` dataclass for standardized returns
+  - [ ] `@validate_args(min_args=N)` decorator
+  - [ ] `@require_track(arg_index=N)` decorator
+  - [ ] `@require_scene(arg_index=N)` decorator
+  - [ ] `@broadcast_result` decorator for automatic broadcasting
+- [ ] Create `src/server/utils/debouncer.py`
+  - [ ] `DebouncedBroadcaster` class
+  - [ ] Async debouncing with key-based tracking
+  - [ ] Auto-cleanup of stale tasks
+  - [ ] Configurable delay times
+- [ ] Test validators and decorators
+  - [ ] Unit tests for each validator
+  - [ ] Test decorator composition
+  - [ ] Test error handling
+
+**Performance Impact**:
+- Validation overhead: ~0.01-0.1ms per event (negligible)
+- Benefits: Type safety, early error detection, self-documenting code
+
+### Phase 11b: Handler Separation ✅
+
+**Estimated Time**: 8-12 hours
+**Status**: PENDING
+
+- [ ] Create handler classes in `src/server/handlers/`
+  - [ ] `TrackEventHandler` class
+    - [ ] `handle_renamed(args, seq_num)`
+    - [ ] `handle_mute(args, seq_num)`
+    - [ ] `handle_arm(args, seq_num)`
+    - [ ] `handle_volume(args, seq_num)`
+    - [ ] Use decorators from base.py
+  - [ ] `SceneEventHandler` class
+    - [ ] `handle_renamed(args, seq_num)`
+    - [ ] `handle_added(args, seq_num)`
+    - [ ] `handle_removed(args, seq_num)`
+    - [ ] `handle_reordered(args, seq_num)`
+  - [ ] `DeviceEventHandler` class
+    - [ ] `handle_added(args, seq_num)`
+    - [ ] `handle_deleted(args, seq_num)`
+    - [ ] `handle_param_changed(args, seq_num)` with debouncing
+  - [ ] `ClipSlotEventHandler` class
+    - [ ] `handle_created(args, seq_num)`
+    - [ ] `handle_state_changed(args, seq_num)`
+  - [ ] `TransportEventHandler` class
+    - [ ] `handle_play(args, seq_num)`
+    - [ ] `handle_tempo(args, seq_num)`
+    - [ ] `handle_position(args, seq_num)`
+- [ ] Update `ASTServer.__init__()` to initialize handlers
+  - [ ] Create handler instances
+  - [ ] Pass server reference to handlers
+  - [ ] Build event routing registry
+- [ ] Refactor `process_live_event()` to route to handlers
+  - [ ] Use handler registry for routing
+  - [ ] Metrics tracking for each event
+  - [ ] Consistent error handling
+
+**Benefits**:
+- Single Responsibility Principle
+- Easier to test handlers independently
+- Clear separation by domain
+- Easier to add new event types
+
+### Phase 11c: Service Extraction
+
+**Estimated Time**: 6-8 hours
+**Status**: PENDING
+
+- [ ] Create `src/server/services/query_service.py`
+  - [ ] Move `find_node_by_id()` from ASTServer
+  - [ ] Move `find_nodes_by_type()` from ASTServer
+  - [ ] Move `query_nodes()` from ASTServer
+  - [ ] Move `get_project_info()` from ASTServer
+  - [ ] Add caching support (optional)
+- [ ] Create `src/server/services/project_service.py`
+  - [ ] Move `load_project()` from ASTServer
+  - [ ] Move `_build_node_tree()` from ASTServer
+  - [ ] Move `get_ast_json()` from ASTServer
+  - [ ] Add project state management
+- [ ] Create `src/server/services/diff_service.py`
+  - [ ] Move `diff_with_file()` from ASTServer
+  - [ ] Move `broadcast_diff()` from ASTServer
+  - [ ] Add diff computation utilities
+- [ ] Update `ASTServer` to delegate to services
+  - [ ] Initialize service instances
+  - [ ] Add delegation methods
+  - [ ] Keep clean public API
+
+**Result**: `ASTServer` becomes thin orchestrator (~200 lines)
+
+### Phase 11d: Caching & Optimization (Optional)
+
+**Estimated Time**: 4-6 hours
+**Status**: PENDING
+**Priority**: Medium (only if performance issues)
+
+- [ ] Create `src/server/utils/cache.py`
+  - [ ] `ASTCache` class with LRU eviction
+  - [ ] Cache track/scene lookups by index
+  - [ ] Version-based cache invalidation
+  - [ ] Configurable cache size
+- [ ] Integrate caching into `ASTNavigator`
+  - [ ] Optional caching mode (disabled by default)
+  - [ ] Invalidate on AST modifications
+  - [ ] Track cache hit/miss statistics
+- [ ] Benchmark performance
+  - [ ] Measure lookup times with/without cache
+  - [ ] Test with large projects (50+ tracks, 100+ scenes)
+  - [ ] Memory usage analysis
+
+**Performance**:
+- 10-100x faster for repeated lookups
+- Memory cost: ~1-10MB for typical projects
+- Must invalidate on every AST modification
+
+### Phase 11e: Metrics & Telemetry (Optional)
+
+**Estimated Time**: 4-6 hours
+**Status**: PENDING
+**Priority**: Low (nice to have for production)
+
+- [ ] Create `src/server/utils/metrics.py`
+  - [ ] `EventMetrics` class
+  - [ ] Track event counts by type
+  - [ ] Track processing durations
+  - [ ] Track error rates
+  - [ ] Export statistics as JSON
+- [ ] Integrate metrics into event processing
+  - [ ] Use `@contextmanager` for tracking
+  - [ ] Add metrics to `process_live_event()`
+  - [ ] Log statistics periodically
+- [ ] Create metrics API endpoint
+  - [ ] `GET /metrics` - Return statistics
+  - [ ] Useful for monitoring and debugging
+- [ ] Add metrics visualization (optional)
+  - [ ] Display in Svelte UI
+  - [ ] Chart event rates over time
+  - [ ] Highlight slow events
+
+**Benefits**:
+- Identify performance bottlenecks
+- Track error patterns
+- Understand usage patterns
+- Detect performance regressions
+
+### Phase 11f: Testing Infrastructure
+
+**Estimated Time**: 8-16 hours
+**Status**: PENDING
+**Priority**: High (critical for confidence)
+
+- [ ] Create `src/server/testing/` module
+  - [ ] `fixtures.py` - Pytest fixtures
+    - [ ] `sample_project` fixture with test data
+    - [ ] `ast_server` fixture with mocked WebSocket
+    - [ ] `event_factory` for creating test events
+  - [ ] `factories.py` - Object factories
+    - [ ] `EventFactory.track_renamed()`
+    - [ ] `EventFactory.device_added()`
+    - [ ] `EventFactory.clip_slot_created()`
+    - [ ] Factory methods for all event types
+- [ ] Write unit tests for handlers
+  - [ ] `tests/server/handlers/test_track_handler.py`
+  - [ ] `tests/server/handlers/test_scene_handler.py`
+  - [ ] `tests/server/handlers/test_device_handler.py`
+  - [ ] Test each handler method independently
+  - [ ] Test decorator behavior
+  - [ ] Test error cases
+- [ ] Write unit tests for validators
+  - [ ] `tests/server/validation/test_validators.py`
+  - [ ] Test valid inputs
+  - [ ] Test invalid inputs
+  - [ ] Test edge cases
+- [ ] Write integration tests
+  - [ ] `tests/server/test_event_flow.py`
+  - [ ] End-to-end event processing
+  - [ ] Test event routing
+  - [ ] Test broadcasting
+- [ ] Set up CI/CD (optional)
+  - [ ] GitHub Actions workflow
+  - [ ] Run tests on push
+  - [ ] Code coverage reporting
+
+**Benefits**:
+- Confidence in refactoring
+- Catch regressions early
+- Easier to add new features
+- Documentation through tests
+
+### Timeline & Effort Estimates
+
+**Phase 11a (Foundation)**: 4-6 hours
+**Phase 11b (Handler Separation)**: 8-12 hours
+**Phase 11c (Service Extraction)**: 6-8 hours
+**Phase 11d (Caching)**: 4-6 hours (optional)
+**Phase 11e (Metrics)**: 4-6 hours (optional)
+**Phase 11f (Testing)**: 8-16 hours
+
+**Total Core Effort**: 18-26 hours
+**Total with Optional**: 34-54 hours
+
+### Success Criteria
+
+- [ ] `api.py` reduced to ~200 lines
+- [ ] All handlers in separate domain classes
+- [ ] All services extracted and tested
+- [ ] Event processing still works correctly
+- [ ] No performance regressions
+- [ ] 80%+ test coverage on new code
+- [ ] Documentation updated
+- [ ] All existing functionality preserved
+
+### Migration Strategy
+
+1. **Incremental Migration** (recommended)
+   - Create new structure alongside old code
+   - Migrate handlers one at a time
+   - Test each migration step
+   - Remove old code when stable
+
+2. **Backward Compatibility**
+   - Keep old API methods as thin wrappers
+   - Mark deprecated methods
+   - Remove after migration complete
+
+3. **Testing at Each Step**
+   - Run existing manual tests
+   - Add new unit tests
+   - Verify WebSocket still works
+   - Check Svelte UI updates
+
+### Implementation Order (Recommended)
+
+1. ✅ **Start with Phase 11a** (Foundation)
+   - Low risk, high value
+   - Enables all other phases
+   - Immediate code quality improvement
+
+2. ✅ **Then Phase 11b** (Handler Separation)
+   - Biggest architectural improvement
+   - Makes code much more maintainable
+   - Enables better testing
+
+3. ✅ **Then Phase 11c** (Service Extraction)
+   - Completes the refactoring
+   - Clean separation of concerns
+   - Thin orchestrator pattern
+
+4. ⚠️ **Optional: Phase 11d & 11e** (if needed)
+   - Only if performance becomes an issue
+   - Metrics useful for production
+   - Caching can wait
+
+5. ✅ **Finally Phase 11f** (Testing)
+   - Provides confidence
+   - Enables future refactoring
+   - Catches regressions
+
+---
