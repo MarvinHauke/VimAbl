@@ -182,39 +182,16 @@ All events are wrapped with sequence metadata:
 **OSC Types:** `,iiif` (int, int, int, float)
 **Debouncing:** 50ms minimum interval per parameter
 
-### Clip Events
+### Clip Slot Events
 
-#### Clip Triggered
+#### Clip Slot Created
 ```
-/live/clip/triggered <track_idx:int> <scene_idx:int>
+/live/clip_slot/created <track_idx:int> <scene_idx:int> <has_clip:bool> <has_stop:bool> <playing_status:int>
 ```
-**Example:** `/live/clip/triggered 0 2`
-**When:** User launches a clip
-**OSC Types:** `,ii` (int, int)
-
-#### Clip Stopped
-```
-/live/clip/stopped <track_idx:int> <scene_idx:int>
-```
-**Example:** `/live/clip/stopped 0 2`
-**When:** Clip stops playing
-**OSC Types:** `,ii` (int, int)
-
-#### Clip Added
-```
-/live/clip/added <track_idx:int> <scene_idx:int> <name:str>
-```
-**Example:** `/live/clip/added 1 0 "Drums"`
-**When:** User creates a new clip
-**OSC Types:** `,iis` (int, int, string)
-
-#### Clip Deleted
-```
-/live/clip/deleted <track_idx:int> <scene_idx:int>
-```
-**Example:** `/live/clip/deleted 1 0`
-**When:** User deletes a clip
-**OSC Types:** `,ii` (int, int)
+**Example:** `/live/clip_slot/created 0 1 T T 0`
+**When:** A clip slot is created, modified, or a clip is added/removed
+**OSC Types:** `,iiTTi` (int, int, bool, bool, int)
+**Playing Status:** 0=Stopped, 1=Playing, 2=Triggered
 
 ### Scene Events
 
@@ -225,6 +202,31 @@ All events are wrapped with sequence metadata:
 **Example:** `/live/scene/renamed 0 "Intro"`
 **When:** User renames a scene
 **OSC Types:** `,is` (int, string)
+
+#### Scene Added
+```
+/live/scene/added <scene_idx:int> <name:str>
+```
+**Example:** `/live/scene/added 2 "New Scene"`
+**When:** User inserts a new scene
+**OSC Types:** `,is` (int, string)
+
+#### Scene Removed
+```
+/live/scene/removed <scene_idx:int>
+```
+**Example:** `/live/scene/removed 2`
+**When:** User deletes a scene
+**OSC Types:** `,i` (int)
+
+#### Scene Reordered
+```
+/live/scene/reordered <scene_idx:int> <name:str>
+```
+**Example:** `/live/scene/reordered 1 "Verse"`
+**When:** User moves a scene
+**OSC Types:** `,is` (int, string)
+**Note:** Currently ignored by server in favor of add/remove handling.
 
 #### Scene Triggered
 ```
@@ -501,5 +503,5 @@ For production/distributed setups, consider migrating to ZeroMQ:
 
 ---
 
-**Last Updated:** 2025-11-12
-**Status:** Design complete, implementation pending
+**Last Updated:** 2025-11-28
+**Status:** Implemented (Phase 6)

@@ -110,7 +110,19 @@ def extract_clip_slots(track_elem, track_index, num_scenes):
 1. **XML Load**: `ASTBuilder` creates full `ClipSlotNode` tree.
 2. **Live Event**: User triggers clip in Live.
 3. **Observer**: `TrackObserver` detects `playing_status` change.
-4. **UDP**: Sends `/live/clip_slot/triggered <track> <scene> <bool>`.
-5. **Server**: Broadcasts event to WebSocket.
-6. **Frontend**: `ASTUpdater` updates `is_triggered` attribute.
-7. **UI**: `TreeNode` applies `clip-triggered` class (orange pulse).
+4. **UDP**: Sends `/live/clip_slot/created` (or similar status update).
+5. **Server**: `ASTServer._handle_clip_slot_created`:
+    - Checks for existing slot (deduplication).
+    - Updates attributes (`playing_status`, `has_clip`, etc.).
+    - Uses `ClipSlotManager` to insert new slot if needed.
+    - Generates and broadcasts `DIFF_UPDATE`.
+6. **Frontend**: `astStore.applyDiff()` applies changes to client AST.
+7. **UI**: `TreeNode` updates visual state (e.g., orange pulse for triggered).
+
+## Server-Side Management
+
+The `ClipSlotManager` class (`src/server/ast_helpers.py`) encapsulates logic for:
+- Finding existing slots by scene index.
+- Inserting new slots in the correct order (by `scene_index`).
+- Updating slot attributes.
+- Creating new `ClipSlotNode` instances with standard IDs.

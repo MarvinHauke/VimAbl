@@ -108,44 +108,50 @@ stats = listener.get_stats()
 
 ### 2. AST Server (`src/server/api.py`)
 
-**Purpose**: Central server that manages the AST, processes events, and broadcasts updates
+**Purpose**: Central server that manages the AST, processes events, and broadcasts updates.
 
-**Key Classes**:
+**Core Class: `ASTServer`**
+The main entry point that orchestrates AST management. It delegates specific functionality to specialized services and handlers.
 
-#### `ASTServer`
-Main server class with these responsibilities:
+*   **Services**:
+    *   `QueryService`: Handles AST queries (`find_node_by_id`, `get_ast_json`, `diff_with_file`).
+    *   `ProjectService`: Handles project loading and parsing (`load_project`).
+*   **Event Routing**: Uses a registry (`_build_event_handler_registry`) to route OSC paths to specialized handlers.
+*   **Debouncing**: Uses `DebouncedBroadcaster` for high-frequency events like parameters and tempo.
 
-1. **AST Management**:
-   - Load project from `.als` or `.xml` file
-   - Build AST using `ASTBuilder`
-   - Compute node hashes with `HashVisitor`
-   - Serialize to JSON with `SerializationVisitor`
+**Event Handlers (`src/server/handlers/`)**:
+Logic for processing specific event types is refactored into dedicated classes:
+*   `TrackEventHandler`: Handles track renaming and state changes (mute, arm, volume).
+*   `DeviceEventHandler`: Handles device addition, deletion, and parameter updates.
+*   `SceneEventHandler`: Handles scene operations (add, remove, rename, reorder).
+*   `ClipSlotEventHandler`: Handles clip slot creation and status updates.
+*   `TransportEventHandler`: Handles global transport state (play, tempo).
 
-2. **Event Processing**:
-   - Route UDP events to appropriate handlers
-   - Update AST nodes based on event type
-   - Recompute hashes for modified nodes
-   - Generate minimal diffs
+**AST Helpers (`src/server/ast_helpers.py`)**:
+A suite of utility classes for AST manipulation and maintenance:
+*   `ASTNavigator`: Static methods to find tracks, scenes, and traverse the tree.
+*   `HashManager`: Recomputes node hashes and propagates changes up the tree.
+*   `DiffGenerator`: Creates standardized diff objects (`added`, `removed`, `modified`, `state_changed`).
+*   `SceneIndexManager`: Handles complex index shifting for scenes and clip slots during insertion/removal.
+*   `ClipSlotManager`: Manages clip slot deduplication and ordered insertion by `scene_index`.
+*   `ASTBuilder`: Bridges the gap between the raw XML parser and the `ASTNode` object structure.
 
-3. **WebSocket Server**:
-   - Start/stop WebSocket server
-   - Broadcast full AST on new connections
-   - Broadcast incremental diffs
-   - Handle client connections/disconnections
-
-**Event Handlers**:
+**Event Handler Map**:
 
 | Method | Event | Action |
 |--------|-------|--------|
-| `_handle_track_renamed()` | `/live/track/renamed` | Update track name, rehash, broadcast diff |
-| `_handle_track_state()` | `/live/track/mute`<br>`/live/track/arm`<br>`/live/track/volume` | Update mixer attributes (no rehash) |
-| `_handle_device_added()` | `/live/device/added` | Add device node, rehash, broadcast diff |
-| `_handle_device_deleted()` | `/live/device/deleted` | Remove device node, rehash, broadcast diff |
-| `_handle_scene_renamed()` | `/live/scene/renamed` | Update scene name, rehash, broadcast diff |
+| `TrackEventHandler.handle_track_renamed` | `/live/track/renamed` | Update track name, rehash, broadcast diff |
+| `TrackEventHandler.handle_track_state` | `/live/track/mute`<br>`/live/track/arm`<br>`/live/track/volume` | Update mixer attributes (no rehash) |
+| `DeviceEventHandler.handle_device_added` | `/live/device/added` | Add device node, rehash, broadcast diff |
+| `DeviceEventHandler.handle_device_deleted` | `/live/device/deleted` | Remove device node, rehash, broadcast diff |
+| `SceneEventHandler.handle_scene_added` | `/live/scene/added` | Add scene, shift indices, broadcast diff |
+| `SceneEventHandler.handle_scene_removed` | `/live/scene/removed` | Remove scene, shift indices, broadcast diff |
+| `SceneEventHandler.handle_scene_renamed` | `/live/scene/renamed` | Update scene name, rehash, broadcast diff |
+| `ClipSlotEventHandler.handle_clip_slot_created` | `/live/clip_slot/created` | Add/update clip slot, rehash, broadcast diff |
 
 **Structural vs State Changes**:
 
-- **Structural changes** (track rename, device add/delete):
+- **Structural changes** (track rename, device add/delete, scene add/remove, clip slot creation):
   - Modify node structure or identity
   - Require hash recomputation
   - Broadcast as `DIFF_UPDATE` messages
@@ -178,58 +184,27 @@ WebSocket server implementation:
 - Routes incoming messages (future: bi-directional control)
 - Broadcasts diffs and live events
 
-**Message Types**:
+### 4. Serializers (`src/websocket/serializers.py`)
 
-```typescript
-// Full AST sent on connection
-{
-  type: "FULL_AST",
-  payload: {
-    ast: ASTNode,
-    project_path: string
-  }
-}
+**Purpose**: Converts AST nodes and diffs into JSON-serializable formats for WebSocket communication, and constructs standardized WebSocket messages.
 
-// Incremental diff from XML file save
-{
-  type: "DIFF_UPDATE",
-  payload: {
-    changes: [
-      {
-        type: "added" | "removed" | "modified" | "state_changed",
-        node_id: string,
-        node_type: string,
-        path: string,
-        old_value: any,
-        new_value: any,
-        attribute?: string
-      }
-    ]
-  }
-}
+**Key Classes/Functions**:
 
-// Real-time UDP event
-{
-  type: "live_event",
-  payload: {
-    event_path: string,
-    args: any[],
-    seq_num: number,
-    timestamp: number
-  }
-}
+#### `ASTSerializer`
+Provides static methods for converting AST nodes and diff results into JSON-compatible dictionaries:
+- `serialize_node(node: ASTNode, include_children: bool = True, depth: int = -1)`: Converts an AST node into a dictionary, optionally including children and controlling serialization depth.
+- `serialize_diff(diff_result: Dict[str, Any])`: Converts a raw diff result dictionary into a standardized JSON-compatible diff representation, ensuring all change types are properly formatted.
+- `to_json(data: Dict[str, Any], pretty: bool = False)`: A utility to convert any dictionary to a JSON string.
 
-// Error notification
-{
-  type: "ERROR",
-  payload: {
-    error: string,
-    details: string
-  }
-}
-```
+#### Message Creation Functions
+Convenience functions for constructing specific WebSocket message types:
+- `create_message(msg_type: str, payload: Dict[str, Any])`: General utility to create a message envelope.
+- `create_full_ast_message(root: ASTNode, project_path: Optional[str] = None)`: Creates a `FULL_AST` message containing the entire serialized AST.
+- `create_diff_message(diff_result: Dict[str, Any])`: Creates a `DIFF_UPDATE` message with serialized diff changes.
+- `create_error_message(error: str, details: Optional[str] = None)`: Creates an `ERROR` message for broadcasting server-side issues.
+- `create_ack_message(request_id: Optional[str] = None)`: Creates an `ACK` message to acknowledge client requests.
 
-### 4. XML File Watcher (`src/main.py:XMLFileWatcher`)
+### 5. XML File Watcher (`src/main.py:XMLFileWatcher`)
 
 **Purpose**: Detect when the user saves the project in Live and reload the AST
 
@@ -366,7 +341,41 @@ function applyLiveEvent(eventPath: string, args: any[], seqNum: number): void {
 }
 ```
 
-### 6. AST Updater (`src/web/frontend/src/lib/stores/ast-updater.ts`)
+### 6. AST Node Types (`src/ast/node.py`)
+
+**Purpose**: Defines the data model for the Ableton Live project's Abstract Syntax Tree (AST). Each node represents a distinct entity within the project (e.g., track, device, scene).
+
+**Key Constructs**:
+
+#### `NodeType` Enum
+An enumeration defining all possible types of AST nodes. This provides a standardized way to identify node roles within the tree.
+*   **Examples**: `PROJECT`, `TRACK`, `DEVICE`, `CLIP_SLOT`, `SCENE`, `MIXER`, `CLIP`, `FILE_REF`, `AUTOMATION`, `PARAMETER`.
+
+#### `ASTNode` (Base Class)
+The foundational class for all nodes in the AST. It provides common properties and methods for tree management:
+*   `node_type`: The specific type of the node (from `NodeType` enum).
+*   `id`: A unique identifier for the node (used for diffing and referencing).
+*   `parent`: Reference to the parent node in the AST.
+*   `children`: A list of child `ASTNode` objects.
+*   `attributes`: A dictionary to store various properties specific to the node type (e.g., `name`, `index`, `volume`).
+*   `hash`: A cryptographic hash representing the node's current state (used for efficient change detection).
+*   `add_child(child)`: Adds a child node and sets its parent.
+*   `remove_child(child)`: Removes a child node.
+
+#### Concrete Node Types
+Specialized `dataclass` implementations inheriting from `ASTNode`, each representing a specific Ableton Live entity:
+
+*   **`ProjectNode`**: The root of the AST, representing the entire Ableton Live project. Key attributes: `version`, `creator`.
+*   **`TrackNode`**: Represents an audio, MIDI, return, or master track. Key attributes: `name`, `index`, `color`, `is_muted`, `is_soloed`.
+*   **`DeviceNode`**: Represents an instrument or effect device on a track. Key attributes: `name`, `device_type`, `is_enabled`.
+*   **`ClipSlotNode`**: Represents a slot in the Session View grid where a clip can reside. Key attributes: `track_index`, `scene_index`, `has_clip`, `is_playing`, `is_triggered`.
+*   **`ClipNode`**: Represents an actual MIDI or audio clip. Key attributes: `name`, `clip_type`, `start_time`, `end_time`, `is_looped`.
+*   **`FileRefNode`**: Represents a reference to an external file (e.g., samples). Key attributes: `name`, `path`, `hash_val`, `ref_type`.
+*   **`SceneNode`**: Represents a scene (horizontal row) in the Session View. Key attributes: `name`, `index`, `tempo`.
+*   **`MixerNode`**: Represents the mixer section of a track. Key attributes: `volume`, `pan`, `is_muted`, `is_soloed`.
+*   **`ParameterNode`**: Represents an automatable parameter of a device. Key attributes: `name`, `value`, `min`, `max`, `is_automated`.
+
+### 7. AST Updater (`src/web/frontend/src/lib/stores/ast-updater.ts`)
 
 **Purpose**: Map UDP events to AST node mutations
 
@@ -670,6 +679,32 @@ $effect(() => {
 
 **Gap Threshold**: 5 events
 **Recovery**: Manual save required
+
+### Scenario 6: User Adds Scene (Server-Side AST Update)
+
+```
+1. User presses Cmd+I in Live (Insert Scene)
+2. SceneObserver fires _on_scene_added()
+3. Remote Script sends: /live/seq 160 <time> /live/scene/added 2 "Scene 3"
+4. UDP Listener receives packet
+5. ASTServer.process_live_event() called
+6. _handle_scene_added() executes:
+   - Uses SceneIndexManager to shift indices for all scenes > 2
+   - Uses SceneIndexManager to shift scene_index for all clip slots > 2
+   - Creates new SceneNode at index 2
+   - Inserts SceneNode into AST children
+   - Recomputes hashes
+   - Generates complex diff (1 added scene, N modified scenes/slots)
+   - Broadcasts DIFF_UPDATE
+7. Frontend receives DIFF_UPDATE
+8. astStore.applyDiff() executes:
+   - Updates indices of existing nodes (no animation)
+   - Inserts new scene node (Green highlight + slideIn)
+9. TreeView re-renders with new scene structure
+```
+
+**Latency**: ~50-100ms
+**Consistency**: Server AST remains authoritative source of truth
 
 ## Performance Optimizations
 
