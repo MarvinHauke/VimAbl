@@ -53,7 +53,14 @@ selected_track = view.selected_track
 ### Ableton Live 12 MIDI Remote Scripts
 
 **URL**: https://github.com/gluon/AbletonLive12_MIDIRemoteScripts
+
+### PythonLiveAPI_documentation
+
 **URL**: https://structure-void.com/PythonLiveAPI_documentation/Live11.0.xml
+
+### AbletonLiveRemoteScripts_Docs for Framework Classes
+
+**URL**: https://structure-void.com/AbletonLiveRemoteScripts_Docs/_Framework/
 
 **What it is**: Decompiled Python source code of Ableton Live 11's built-in MIDI Remote Scripts. This is an unofficial repository that shows how Ableton's own controllers are implemented.
 
