@@ -69,7 +69,15 @@ class ASTServer:
     and WebSocket streaming.
     """
 
-    def __init__(self, enable_websocket: bool = False, ws_host: str = "localhost", ws_port: int = 8765):
+    def __init__(
+        self,
+        enable_websocket: bool = False,
+        ws_host: str = "localhost",
+        ws_port: int = 8765,
+        enable_cache: bool = True,
+        cache_capacity: int = 256,
+        enable_metrics: bool = True
+    ):
         self.current_ast: Optional[ASTNode] = None
         self.current_file: Optional[Path] = None
         self.serializer = SerializationVisitor()
@@ -89,6 +97,16 @@ class ASTServer:
 
         # Debouncer for high-frequency events (device params, tempo, etc.)
         self.debouncer = DebouncedBroadcaster(delay=EventConstants.DEBOUNCE_DELAY_SECONDS)
+
+        # AST Cache for performance optimization
+        from .utils import ASTCache
+        self.cache = ASTCache(enabled=enable_cache, capacity=cache_capacity)
+        logger.info(f"AST Cache initialized: enabled={enable_cache}, capacity={cache_capacity}")
+
+        # Metrics collection for monitoring
+        from .utils import MetricsCollector
+        self.metrics = MetricsCollector(enabled=enable_metrics)
+        logger.info(f"Metrics collection initialized: enabled={enable_metrics}")
 
         # Initialize services
         self.query_service = QueryService(self)
@@ -292,33 +310,57 @@ class ASTServer:
         Returns:
             Dictionary with processing result, or None if event was ignored
         """
+        # Track event received
+        self.metrics.increment('events.received')
+        self.metrics.increment('events.received.by_type', tags={'event_type': event_path})
+
         if not self.current_ast:
             logger.warning(f"No AST loaded, ignoring event: {event_path}")
+            self.metrics.increment('events.ignored.no_ast')
             return None
 
-        try:
-            # Try exact match first
-            handler = self._event_handlers.get(event_path)
-            
-            if handler:
-                return await handler(args, seq_num)
-            
-            # Handle prefix-based routing for transport and device params
-            if event_path.startswith("/live/transport/"):
-                return await self.transport_handler.handle_transport_event(event_path, args, seq_num)
-            elif event_path.startswith("/live/device/param"):
-                return await self.device_handler.handle_device_param(args, seq_num)
-            else:
-                logger.debug(f"Unhandled event type: {event_path}")
-                return None
+        # Time the entire event processing
+        with self.metrics.timer('event.processing.duration', tags={'event_type': event_path}):
+            try:
+                # Try exact match first
+                handler = self._event_handlers.get(event_path)
+                
+                if handler:
+                    result = await handler(args, seq_num)
+                    if result:
+                        self.metrics.increment('events.processed')
+                        self.metrics.increment('events.processed.by_type', tags={'event_type': event_path})
+                    return result
+                
+                # Handle prefix-based routing for transport and device params
+                if event_path.startswith("/live/transport/"):
+                    result = await self.transport_handler.handle_transport_event(event_path, args, seq_num)
+                    if result:
+                        self.metrics.increment('events.processed')
+                        self.metrics.increment('events.processed.by_type', tags={'event_type': 'transport'})
+                    return result
+                elif event_path.startswith("/live/device/param"):
+                    result = await self.device_handler.handle_device_param(args, seq_num)
+                    if result:
+                        self.metrics.increment('events.processed')
+                        self.metrics.increment('events.processed.by_type', tags={'event_type': 'device_param'})
+                    return result
+                else:
+                    logger.debug(f"Unhandled event type: {event_path}")
+                    self.metrics.increment('events.unhandled')
+                    self.metrics.increment('events.unhandled.by_type', tags={'event_type': event_path})
+                    return None
 
-        except Exception as e:
-            logger.error(f"Error processing event {event_path}: {e}", exc_info=True)
-            await self._broadcast_error_if_running(
-                "Event processing error",
-                f"Failed to process {event_path}: {str(e)}"
-            )
-            return None
+            except Exception as e:
+                logger.error(f"Error processing event {event_path}: {e}", exc_info=True)
+                self.metrics.increment('errors.event_processing')
+                self.metrics.increment('errors.event_processing.by_type', tags={'event_type': event_path})
+                
+                await self._broadcast_error_if_running(
+                    "Event processing error",
+                    f"Failed to process {event_path}: {str(e)}"
+                )
+                return None 
 
     def get_websocket_status(self) -> Dict[str, Any]:
         """
@@ -340,3 +382,32 @@ class ASTServer:
             "port": self.ws_port,
             "clients": self.websocket_server.get_client_count(),
         }
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        Get AST cache statistics.
+
+        Returns:
+            Dictionary with cache statistics including hit/miss rates
+        """
+        return self.cache.get_stats()
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get all collected metrics.
+
+        Returns:
+            Dictionary with all metrics (timings, counters, gauges)
+        """
+        from .utils import MetricsExporter
+        return MetricsExporter.to_json(self.metrics.get_all_metrics())
+
+    def get_metrics_summary(self) -> Dict[str, Any]:
+        """
+        Get high-level metrics summary.
+
+        Returns:
+            Dictionary with key metrics summary
+        """
+        from .utils import MetricsExporter
+        return MetricsExporter.to_summary(self.metrics.get_all_metrics())

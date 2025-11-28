@@ -9,8 +9,11 @@ This module provides utility classes for:
 """
 
 import uuid
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, List, Callable, TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from .utils import ASTCache
 
 from ..ast import (
     ASTNode,
@@ -34,49 +37,153 @@ from .constants import (
 
 
 class ASTNavigator:
-    """Helper class for finding nodes in the AST."""
+    """
+    Helper class for finding nodes in the AST.
+    
+    Supports optional caching for performance optimization.
+    """
 
     @staticmethod
-    def find_track_by_index(root: ProjectNode, index: int) -> Optional[TrackNode]:
-        """Find a track node by its index."""
+    def find_track_by_index(
+        root: ProjectNode,
+        index: int,
+        cache: Optional['ASTCache'] = None
+    ) -> Optional[TrackNode]:
+        """
+        Find a track node by its index.
+        
+        Args:
+            root: Project root node
+            index: Track index to find
+            cache: Optional ASTCache for performance
+            
+        Returns:
+            TrackNode if found, None otherwise
+        """
         if not root:
             return None
 
+        # Try cache first
+        if cache:
+            cached = cache.get_track_by_index(index, ast_version=root.hash)
+            if cached is not None:
+                return cached
+
+        # Cache miss or no cache - compute
         tracks = [child for child in root.children if child.node_type == NodeType.TRACK]
 
         for track in tracks:
             if track.attributes.get('index') == index:
+                # Cache the result
+                if cache:
+                    cache.put_track_by_index(index, track, ast_version=root.hash)
                 return track
 
         return None
 
     @staticmethod
-    def find_scene_by_index(root: ProjectNode, index: int) -> Optional[SceneNode]:
-        """Find a scene node by its index."""
+    def find_scene_by_index(
+        root: ProjectNode,
+        index: int,
+        cache: Optional['ASTCache'] = None
+    ) -> Optional[SceneNode]:
+        """
+        Find a scene node by its index.
+        
+        Args:
+            root: Project root node
+            index: Scene index to find
+            cache: Optional ASTCache for performance
+            
+        Returns:
+            SceneNode if found, None otherwise
+        """
         if not root:
             return None
 
+        # Try cache first
+        if cache:
+            cached = cache.get_scene_by_index(index, ast_version=root.hash)
+            if cached is not None:
+                return cached
+
+        # Cache miss or no cache - compute
         scenes = [child for child in root.children if child.node_type == NodeType.SCENE]
 
         for scene in scenes:
             if scene.attributes.get('index') == index:
+                # Cache the result
+                if cache:
+                    cache.put_scene_by_index(index, scene, ast_version=root.hash)
                 return scene
 
         return None
 
     @staticmethod
-    def get_scenes(root: ProjectNode) -> List[SceneNode]:
-        """Get all scene nodes from the project."""
+    def get_scenes(
+        root: ProjectNode,
+        cache: Optional['ASTCache'] = None
+    ) -> List[SceneNode]:
+        """
+        Get all scene nodes from the project.
+        
+        Args:
+            root: Project root node
+            cache: Optional ASTCache for performance
+            
+        Returns:
+            List of SceneNodes
+        """
         if not root:
             return []
-        return [c for c in root.children if c.node_type == NodeType.SCENE]
+
+        # Try cache first
+        if cache:
+            cached = cache.get_all_scenes(ast_version=root.hash)
+            if cached is not None:
+                return cached
+
+        # Cache miss or no cache - compute
+        scenes = [c for c in root.children if c.node_type == NodeType.SCENE]
+
+        # Cache the result
+        if cache:
+            cache.put_all_scenes(scenes, ast_version=root.hash)
+
+        return scenes
 
     @staticmethod
-    def get_tracks(root: ProjectNode) -> List[TrackNode]:
-        """Get all track nodes from the project."""
+    def get_tracks(
+        root: ProjectNode,
+        cache: Optional['ASTCache'] = None
+    ) -> List[TrackNode]:
+        """
+        Get all track nodes from the project.
+        
+        Args:
+            root: Project root node
+            cache: Optional ASTCache for performance
+            
+        Returns:
+            List of TrackNodes
+        """
         if not root:
             return []
-        return [c for c in root.children if c.node_type == NodeType.TRACK]
+
+        # Try cache first
+        if cache:
+            cached = cache.get_all_tracks(ast_version=root.hash)
+            if cached is not None:
+                return cached
+
+        # Cache miss or no cache - compute
+        tracks = [c for c in root.children if c.node_type == NodeType.TRACK]
+
+        # Cache the result
+        if cache:
+            cache.put_all_tracks(tracks, ast_version=root.hash)
+
+        return tracks
 
 
 class HashManager:
@@ -236,7 +343,7 @@ class SceneIndexManager:
             List of change dictionaries for shifted scenes
         """
         changes = []
-        scenes = ASTNavigator.get_scenes(root)
+        scenes = ASTNavigator.get_scenes(root, cache=None)
 
         for scene in scenes:
             current_idx = scene.attributes.get('index', -1)
@@ -276,7 +383,7 @@ class SceneIndexManager:
             List of change dictionaries for shifted clip slots
         """
         changes = []
-        tracks = ASTNavigator.get_tracks(root)
+        tracks = ASTNavigator.get_tracks(root, cache=None)
 
         for track in tracks:
             for slot in track.children:

@@ -59,6 +59,8 @@ graph TB
 - **UDP/OSC Observer System** - Real-time event streaming with minimal latency
 - **WebSocket AST Server** - Parses and visualizes project structure
 - **Svelte Frontend** - Modern web UI for live project visualization
+- **LRU Caching** - 10-100x faster lookups with automatic version-based invalidation
+- **Metrics & Telemetry** - Comprehensive monitoring for performance optimization
 
 ## Performance Metrics
 

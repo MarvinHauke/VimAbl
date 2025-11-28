@@ -260,3 +260,5 @@ Symlinks enable rapid iteration during development.
 - [WebSocket AST](websocket-ast.md) - AST server and UI
 - [Data Flow](data-flow.md) - Detailed data flow diagrams
 - [ClipSlot Implementation](clipslot-implementation.md) - ClipSlot matrix architecture
+- [Caching System](caching.md) - Performance optimization via caching
+- [Metrics & Telemetry](metrics.md) - System monitoring and metrics collection

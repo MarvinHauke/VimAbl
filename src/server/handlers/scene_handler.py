@@ -103,7 +103,7 @@ class SceneEventHandler(BaseEventHandler):
         scene_idx = int(args[0])
         scene_name = str(args[1])
 
-        scenes = ASTNavigator.get_scenes(self.ast)
+        scenes = ASTNavigator.get_scenes(self.ast, cache=self.server.cache)
         current_scene_count = len(scenes)
 
         logger.info(f"[handle_scene_added] Current scene count: {current_scene_count}, adding scene at index {scene_idx}")
@@ -261,8 +261,8 @@ class SceneEventHandler(BaseEventHandler):
             logger.warning("No current AST, cannot insert scene.")
             return
 
-        scenes = ASTNavigator.get_scenes(self.ast)
-        tracks = ASTNavigator.get_tracks(self.ast)
+        scenes = ASTNavigator.get_scenes(self.ast, cache=self.server.cache)
+        tracks = ASTNavigator.get_tracks(self.ast, cache=self.server.cache)
 
         # Find the scene with index > scene_idx to insert before
         target_scene = None
